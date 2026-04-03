@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Xcode
+DerivedData/
+build/
+*.xcworkspace/xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+
+# General build artifacts
+.build/
+dist/
+out/
+coverage/
+tmp/
+*.log
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.orig
