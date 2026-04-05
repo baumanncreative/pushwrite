@@ -1,0 +1,2409 @@
+{
+  "clipboardRestore" : [
+    {
+      "afterSnapshot" : {
+        "itemCount" : 1,
+        "items" : [
+          {
+            "entries" : [
+              {
+                "dataBase64" : "T1JJR0lOQUxfQ0xJUEJPQVJEXzAwMkI=",
+                "type" : "public.utf8-plain-text"
+              }
+            ]
+          }
+        ]
+      },
+      "beforeSnapshot" : {
+        "itemCount" : 1,
+        "items" : [
+          {
+            "entries" : [
+              {
+                "dataBase64" : "T1JJR0lOQUxfQ0xJUEJPQVJEXzAwMkI=",
+                "type" : "public.utf8-plain-text"
+              }
+            ]
+          }
+        ]
+      },
+      "harnessResult" : {
+        "accessibilityTrusted" : true,
+        "clipboardRestored" : true,
+        "focusAfterPaste" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : "PushWrite 002B test äöü ß €."
+        },
+        "focusBeforePaste" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : ""
+        },
+        "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+        "harnessFrontmostAfterPaste" : false,
+        "harnessFrontmostAtEntry" : false,
+        "harnessFrontmostBeforePaste" : false,
+        "harnessPID" : 37934,
+        "initialFocus" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : ""
+        },
+        "originalPasteboard" : {
+          "changeCount" : 224,
+          "itemCount" : 1
+        },
+        "pasteDelayMs" : 120,
+        "preflightOnly" : false,
+        "promptAccessibility" : false,
+        "restoreClipboard" : true,
+        "restoreDelayMs" : 350,
+        "settleDelayMs" : 150,
+        "syntheticPastePosted" : true,
+        "textLength" : 28,
+        "timestamp" : "2026-04-05T17:26:16Z"
+      },
+      "insertedTextMatches" : true,
+      "name" : "plain",
+      "success" : true
+    },
+    {
+      "afterSnapshot" : {
+        "itemCount" : 1,
+        "items" : [
+          {
+            "entries" : [
+              {
+                "dataBase64" : "PHA+PHN0cm9uZz5QdXNoV3JpdGUgMDAyQiByaWNoIGNsaXBib2FyZCBwcm9iZTwvc3Ryb25nPjwvcD4KPHA+TGluZSB0d28gd2l0aCBlbXBoYXNpcy48L3A+",
+                "type" : "public.html"
+              },
+              {
+                "dataBase64" : "e1xydGYxXGFuc2lcYW5zaWNwZzEyNTJcY29jb2FydGYyODY5Clxjb2NvYXRleHRzY2FsaW5nMFxjb2NvYXBsYXRmb3JtMHtcZm9udHRibFxmMFxmbmlsXGZjaGFyc2V0MCBIZWx2ZXRpY2FOZXVlLUJvbGQ7fQp7XGNvbG9ydGJsO1xyZWQyNTVcZ3JlZW4yNTVcYmx1ZTI1NTt9CntcKlxleHBhbmRlZGNvbG9ydGJsOzt9ClxwYXJkXHR4NTYwXHR4MTEyMFx0eDE2ODBcdHgyMjQwXHR4MjgwMFx0eDMzNjBcdHgzOTIwXHR4NDQ4MFx0eDUwNDBcdHg1NjAwXHR4NjE2MFx0eDY3MjBccGFyZGlybmF0dXJhbFxwYXJ0aWdodGVuZmFjdG9yMAoKXGYwXGJcZnMyOCBcY2YwIFB1c2hXcml0ZSAwMDJCIHJpY2ggY2xpcGJvYXJkIHByb2JlXApMaW5lIHR3byB3aXRoIGVtcGhhc2lzLn0=",
+                "type" : "public.rtf"
+              },
+              {
+                "dataBase64" : "\/\/5QAHUAcwBoAFcAcgBpAHQAZQAgADAAMAAyAEIAIAByAGkAYwBoACAAYwBsAGkAcABiAG8AYQByAGQAIABwAHIAbwBiAGUACgBMAGkAbgBlACAAdAB3AG8AIAB3AGkAdABoACAAZQBtAHAAaABhAHMAaQBzAC4A",
+                "type" : "public.utf16-external-plain-text"
+              },
+              {
+                "dataBase64" : "UHVzaFdyaXRlIDAwMkIgcmljaCBjbGlwYm9hcmQgcHJvYmUKTGluZSB0d28gd2l0aCBlbXBoYXNpcy4=",
+                "type" : "public.utf8-plain-text"
+              }
+            ]
+          }
+        ]
+      },
+      "beforeSnapshot" : {
+        "itemCount" : 1,
+        "items" : [
+          {
+            "entries" : [
+              {
+                "dataBase64" : "PHA+PHN0cm9uZz5QdXNoV3JpdGUgMDAyQiByaWNoIGNsaXBib2FyZCBwcm9iZTwvc3Ryb25nPjwvcD4KPHA+TGluZSB0d28gd2l0aCBlbXBoYXNpcy48L3A+",
+                "type" : "public.html"
+              },
+              {
+                "dataBase64" : "e1xydGYxXGFuc2lcYW5zaWNwZzEyNTJcY29jb2FydGYyODY5Clxjb2NvYXRleHRzY2FsaW5nMFxjb2NvYXBsYXRmb3JtMHtcZm9udHRibFxmMFxmbmlsXGZjaGFyc2V0MCBIZWx2ZXRpY2FOZXVlLUJvbGQ7fQp7XGNvbG9ydGJsO1xyZWQyNTVcZ3JlZW4yNTVcYmx1ZTI1NTt9CntcKlxleHBhbmRlZGNvbG9ydGJsOzt9ClxwYXJkXHR4NTYwXHR4MTEyMFx0eDE2ODBcdHgyMjQwXHR4MjgwMFx0eDMzNjBcdHgzOTIwXHR4NDQ4MFx0eDUwNDBcdHg1NjAwXHR4NjE2MFx0eDY3MjBccGFyZGlybmF0dXJhbFxwYXJ0aWdodGVuZmFjdG9yMAoKXGYwXGJcZnMyOCBcY2YwIFB1c2hXcml0ZSAwMDJCIHJpY2ggY2xpcGJvYXJkIHByb2JlXApMaW5lIHR3byB3aXRoIGVtcGhhc2lzLn0=",
+                "type" : "public.rtf"
+              },
+              {
+                "dataBase64" : "\/\/5QAHUAcwBoAFcAcgBpAHQAZQAgADAAMAAyAEIAIAByAGkAYwBoACAAYwBsAGkAcABiAG8AYQByAGQAIABwAHIAbwBiAGUACgBMAGkAbgBlACAAdAB3AG8AIAB3AGkAdABoACAAZQBtAHAAaABhAHMAaQBzAC4A",
+                "type" : "public.utf16-external-plain-text"
+              },
+              {
+                "dataBase64" : "UHVzaFdyaXRlIDAwMkIgcmljaCBjbGlwYm9hcmQgcHJvYmUKTGluZSB0d28gd2l0aCBlbXBoYXNpcy4=",
+                "type" : "public.utf8-plain-text"
+              }
+            ]
+          }
+        ]
+      },
+      "harnessResult" : {
+        "accessibilityTrusted" : true,
+        "clipboardRestored" : true,
+        "focusAfterPaste" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : "PushWrite 002B test äöü ß €."
+        },
+        "focusBeforePaste" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : ""
+        },
+        "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+        "harnessFrontmostAfterPaste" : false,
+        "harnessFrontmostAtEntry" : false,
+        "harnessFrontmostBeforePaste" : false,
+        "harnessPID" : 37935,
+        "initialFocus" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : ""
+        },
+        "originalPasteboard" : {
+          "changeCount" : 227,
+          "itemCount" : 1
+        },
+        "pasteDelayMs" : 120,
+        "preflightOnly" : false,
+        "promptAccessibility" : false,
+        "restoreClipboard" : true,
+        "restoreDelayMs" : 350,
+        "settleDelayMs" : 150,
+        "syntheticPastePosted" : true,
+        "textLength" : 28,
+        "timestamp" : "2026-04-05T17:26:18Z"
+      },
+      "insertedTextMatches" : true,
+      "name" : "rich",
+      "success" : true
+    }
+  ],
+  "harnessAppPath" : "\/Users\/michel\/Code\/pushwrite\/build\/focus-stable-paste-harness\/FocusStablePasteHarness.app",
+  "payload" : "PushWrite 002B test äöü ß €.",
+  "preflight" : {
+    "harnessAccessibilityTrusted" : true,
+    "harnessFrontmostAtEntry" : false,
+    "harnessFrontmostBeforePaste" : false,
+    "notes" : [
+
+    ],
+    "safariAutomationReady" : true,
+    "textEditAutomationReady" : true
+  },
+  "safari" : {
+    "failureReasons" : {
+
+    },
+    "focusAfterTargetAppCount" : 20,
+    "focusBeforeTargetAppCount" : 20,
+    "harnessFrontmostAfterPasteCount" : 0,
+    "harnessFrontmostBeforePasteCount" : 0,
+    "name" : "safari",
+    "records" : [
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37876,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:27Z"
+        },
+        "iteration" : 1,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37878,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:30Z"
+        },
+        "iteration" : 2,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37880,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:32Z"
+        },
+        "iteration" : 3,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37882,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:35Z"
+        },
+        "iteration" : 4,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37885,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:37Z"
+        },
+        "iteration" : 5,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37888,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:40Z"
+        },
+        "iteration" : 6,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37891,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:42Z"
+        },
+        "iteration" : 7,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37893,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:45Z"
+        },
+        "iteration" : 8,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37895,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:47Z"
+        },
+        "iteration" : 9,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37898,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:50Z"
+        },
+        "iteration" : 10,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37900,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:52Z"
+        },
+        "iteration" : 11,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37902,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:55Z"
+        },
+        "iteration" : 12,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37904,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:57Z"
+        },
+        "iteration" : 13,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37906,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:26:00Z"
+        },
+        "iteration" : 14,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37913,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:26:02Z"
+        },
+        "iteration" : 15,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37923,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:26:04Z"
+        },
+        "iteration" : 16,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37926,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:26:07Z"
+        },
+        "iteration" : 17,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37929,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:26:09Z"
+        },
+        "iteration" : 18,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37931,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:26:12Z"
+        },
+        "iteration" : 19,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37933,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:26:14Z"
+        },
+        "iteration" : 20,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      }
+    ],
+    "runCount" : 20,
+    "successCount" : 20
+  },
+  "textEdit" : {
+    "failureReasons" : {
+
+    },
+    "focusAfterTargetAppCount" : 20,
+    "focusBeforeTargetAppCount" : 20,
+    "harnessFrontmostAfterPasteCount" : 0,
+    "harnessFrontmostBeforePasteCount" : 0,
+    "name" : "textedit",
+    "records" : [
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37847,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:01Z"
+        },
+        "iteration" : 1,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37848,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:02Z"
+        },
+        "iteration" : 2,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37849,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:04Z"
+        },
+        "iteration" : 3,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37850,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:05Z"
+        },
+        "iteration" : 4,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37851,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:06Z"
+        },
+        "iteration" : 5,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37853,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:07Z"
+        },
+        "iteration" : 6,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37855,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:09Z"
+        },
+        "iteration" : 7,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37856,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:10Z"
+        },
+        "iteration" : 8,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37857,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:11Z"
+        },
+        "iteration" : 9,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37858,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:12Z"
+        },
+        "iteration" : 10,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37859,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:14Z"
+        },
+        "iteration" : 11,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37860,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:15Z"
+        },
+        "iteration" : 12,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37861,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:16Z"
+        },
+        "iteration" : 13,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37862,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:17Z"
+        },
+        "iteration" : 14,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37863,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:19Z"
+        },
+        "iteration" : 15,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37864,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:20Z"
+        },
+        "iteration" : 16,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37865,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:21Z"
+        },
+        "iteration" : 17,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37866,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:22Z"
+        },
+        "iteration" : 18,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37867,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:24Z"
+        },
+        "iteration" : 19,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "harnessResult" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002B test äöü ß €."
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "harnessBundleID" : "ch.baumanncreative.pushwrite.FocusStablePasteHarness",
+          "harnessFrontmostAfterPaste" : false,
+          "harnessFrontmostAtEntry" : false,
+          "harnessFrontmostBeforePaste" : false,
+          "harnessPID" : 37868,
+          "initialFocus" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "pasteDelayMs" : 120,
+          "preflightOnly" : false,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "syntheticPastePosted" : true,
+          "textLength" : 28,
+          "timestamp" : "2026-04-05T17:25:25Z"
+        },
+        "iteration" : 20,
+        "success" : true,
+        "targetValue" : "PushWrite 002B test äöü ß €."
+      }
+    ],
+    "runCount" : 20,
+    "successCount" : 20
+  },
+  "timestamp" : "2026-04-05T17:26:19Z"
+}
