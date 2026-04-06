@@ -1,0 +1,887 @@
+{
+  "blockedFlow" : {
+    "launchStateAccessibilityTrusted" : true,
+    "preflightWithoutPrompt" : {
+      "accessibilityTrusted" : true,
+      "clipboardRestored" : false,
+      "focusAfterPaste" : {
+        "app" : {
+          "bundleID" : "com.openai.codex",
+          "name" : "Codex",
+          "pid" : 26216
+        }
+      },
+      "focusAtReceipt" : {
+        "app" : {
+          "bundleID" : "com.openai.codex",
+          "name" : "Codex",
+          "pid" : 26216
+        }
+      },
+      "focusBeforePaste" : {
+        "app" : {
+          "bundleID" : "com.openai.codex",
+          "name" : "Codex",
+          "pid" : 26216
+        }
+      },
+      "id" : "C6B8EC61-B00F-4BD4-8692-BC3C897580FD",
+      "kind" : "preflight",
+      "pasteDelayMs" : 120,
+      "productBundleID" : "ch.baumanncreative.pushwrite",
+      "productFrontmostAfterPaste" : false,
+      "productFrontmostAtReceipt" : false,
+      "productFrontmostBeforePaste" : false,
+      "productPID" : 55019,
+      "promptAccessibility" : false,
+      "restoreClipboard" : false,
+      "restoreDelayMs" : 350,
+      "settleDelayMs" : 150,
+      "status" : "ready",
+      "syntheticPastePosted" : false,
+      "textLength" : 0,
+      "timestamp" : "2026-04-05T22:41:56Z"
+    },
+    "promptAttempted" : false
+  },
+  "clipboardRestore" : [
+    {
+      "afterSnapshot" : {
+        "itemCount" : 1,
+        "items" : [
+          {
+            "entries" : [
+              {
+                "dataBase64" : "T1JJR0lOQUxfQ0xJUEJPQVJEXzAwMkQ=",
+                "type" : "public.utf8-plain-text"
+              }
+            ]
+          }
+        ]
+      },
+      "beforeSnapshot" : {
+        "itemCount" : 1,
+        "items" : [
+          {
+            "entries" : [
+              {
+                "dataBase64" : "T1JJR0lOQUxfQ0xJUEJPQVJEXzAwMkQ=",
+                "type" : "public.utf8-plain-text"
+              }
+            ]
+          }
+        ]
+      },
+      "insertedTextMatches" : true,
+      "name" : "plain",
+      "productResponse" : {
+        "accessibilityTrusted" : true,
+        "clipboardRestored" : true,
+        "focusAfterPaste" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : "PushWrite 002D test aeoeue ss EUR."
+        },
+        "focusAtReceipt" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : ""
+        },
+        "focusBeforePaste" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : ""
+        },
+        "id" : "F9B355A7-CA0D-4AA4-81E1-956E2C34C51F",
+        "insertRoute" : "pasteboardCommandV",
+        "insertSource" : "transcription",
+        "kind" : "insertTranscription",
+        "originalPasteboard" : {
+          "changeCount" : 355,
+          "itemCount" : 1
+        },
+        "pasteDelayMs" : 120,
+        "productBundleID" : "ch.baumanncreative.pushwrite",
+        "productFrontmostAfterPaste" : false,
+        "productFrontmostAtReceipt" : false,
+        "productFrontmostBeforePaste" : false,
+        "productPID" : 55019,
+        "promptAccessibility" : false,
+        "restoreClipboard" : true,
+        "restoreDelayMs" : 350,
+        "settleDelayMs" : 150,
+        "status" : "succeeded",
+        "syntheticPastePosted" : true,
+        "textLength" : 34,
+        "timestamp" : "2026-04-05T22:42:29Z"
+      },
+      "success" : true
+    },
+    {
+      "afterSnapshot" : {
+        "itemCount" : 1,
+        "items" : [
+          {
+            "entries" : [
+              {
+                "dataBase64" : "PHA+PHN0cm9uZz5QdXNoV3JpdGUgMDAyRCByaWNoIGNsaXBib2FyZCBwcm9iZTwvc3Ryb25nPjwvcD4KPHA+TGluZSB0d28gd2l0aCBlbXBoYXNpcy48L3A+",
+                "type" : "public.html"
+              },
+              {
+                "dataBase64" : "e1xydGYxXGFuc2lcYW5zaWNwZzEyNTJcY29jb2FydGYyODY5Clxjb2NvYXRleHRzY2FsaW5nMFxjb2NvYXBsYXRmb3JtMHtcZm9udHRibFxmMFxmbmlsXGZjaGFyc2V0MCBIZWx2ZXRpY2FOZXVlLUJvbGQ7fQp7XGNvbG9ydGJsO1xyZWQyNTVcZ3JlZW4yNTVcYmx1ZTI1NTt9CntcKlxleHBhbmRlZGNvbG9ydGJsOzt9ClxwYXJkXHR4NTYwXHR4MTEyMFx0eDE2ODBcdHgyMjQwXHR4MjgwMFx0eDMzNjBcdHgzOTIwXHR4NDQ4MFx0eDUwNDBcdHg1NjAwXHR4NjE2MFx0eDY3MjBccGFyZGlybmF0dXJhbFxwYXJ0aWdodGVuZmFjdG9yMAoKXGYwXGJcZnMyOCBcY2YwIFB1c2hXcml0ZSAwMDJEIHJpY2ggY2xpcGJvYXJkIHByb2JlXApMaW5lIHR3byB3aXRoIGVtcGhhc2lzLn0=",
+                "type" : "public.rtf"
+              },
+              {
+                "dataBase64" : "\/\/5QAHUAcwBoAFcAcgBpAHQAZQAgADAAMAAyAEQAIAByAGkAYwBoACAAYwBsAGkAcABiAG8AYQByAGQAIABwAHIAbwBiAGUACgBMAGkAbgBlACAAdAB3AG8AIAB3AGkAdABoACAAZQBtAHAAaABhAHMAaQBzAC4A",
+                "type" : "public.utf16-external-plain-text"
+              },
+              {
+                "dataBase64" : "UHVzaFdyaXRlIDAwMkQgcmljaCBjbGlwYm9hcmQgcHJvYmUKTGluZSB0d28gd2l0aCBlbXBoYXNpcy4=",
+                "type" : "public.utf8-plain-text"
+              }
+            ]
+          }
+        ]
+      },
+      "beforeSnapshot" : {
+        "itemCount" : 1,
+        "items" : [
+          {
+            "entries" : [
+              {
+                "dataBase64" : "PHA+PHN0cm9uZz5QdXNoV3JpdGUgMDAyRCByaWNoIGNsaXBib2FyZCBwcm9iZTwvc3Ryb25nPjwvcD4KPHA+TGluZSB0d28gd2l0aCBlbXBoYXNpcy48L3A+",
+                "type" : "public.html"
+              },
+              {
+                "dataBase64" : "e1xydGYxXGFuc2lcYW5zaWNwZzEyNTJcY29jb2FydGYyODY5Clxjb2NvYXRleHRzY2FsaW5nMFxjb2NvYXBsYXRmb3JtMHtcZm9udHRibFxmMFxmbmlsXGZjaGFyc2V0MCBIZWx2ZXRpY2FOZXVlLUJvbGQ7fQp7XGNvbG9ydGJsO1xyZWQyNTVcZ3JlZW4yNTVcYmx1ZTI1NTt9CntcKlxleHBhbmRlZGNvbG9ydGJsOzt9ClxwYXJkXHR4NTYwXHR4MTEyMFx0eDE2ODBcdHgyMjQwXHR4MjgwMFx0eDMzNjBcdHgzOTIwXHR4NDQ4MFx0eDUwNDBcdHg1NjAwXHR4NjE2MFx0eDY3MjBccGFyZGlybmF0dXJhbFxwYXJ0aWdodGVuZmFjdG9yMAoKXGYwXGJcZnMyOCBcY2YwIFB1c2hXcml0ZSAwMDJEIHJpY2ggY2xpcGJvYXJkIHByb2JlXApMaW5lIHR3byB3aXRoIGVtcGhhc2lzLn0=",
+                "type" : "public.rtf"
+              },
+              {
+                "dataBase64" : "\/\/5QAHUAcwBoAFcAcgBpAHQAZQAgADAAMAAyAEQAIAByAGkAYwBoACAAYwBsAGkAcABiAG8AYQByAGQAIABwAHIAbwBiAGUACgBMAGkAbgBlACAAdAB3AG8AIAB3AGkAdABoACAAZQBtAHAAaABhAHMAaQBzAC4A",
+                "type" : "public.utf16-external-plain-text"
+              },
+              {
+                "dataBase64" : "UHVzaFdyaXRlIDAwMkQgcmljaCBjbGlwYm9hcmQgcHJvYmUKTGluZSB0d28gd2l0aCBlbXBoYXNpcy4=",
+                "type" : "public.utf8-plain-text"
+              }
+            ]
+          }
+        ]
+      },
+      "insertedTextMatches" : true,
+      "name" : "rich",
+      "productResponse" : {
+        "accessibilityTrusted" : true,
+        "clipboardRestored" : true,
+        "focusAfterPaste" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : "PushWrite 002D test aeoeue ss EUR."
+        },
+        "focusAtReceipt" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : ""
+        },
+        "focusBeforePaste" : {
+          "app" : {
+            "bundleID" : "com.apple.TextEdit",
+            "name" : "TextEdit",
+            "pid" : 13627
+          },
+          "role" : "AXTextArea",
+          "value" : ""
+        },
+        "id" : "125EB2E8-4322-44C9-B6FA-4607582884A4",
+        "insertRoute" : "pasteboardCommandV",
+        "insertSource" : "transcription",
+        "kind" : "insertTranscription",
+        "originalPasteboard" : {
+          "changeCount" : 358,
+          "itemCount" : 1
+        },
+        "pasteDelayMs" : 120,
+        "productBundleID" : "ch.baumanncreative.pushwrite",
+        "productFrontmostAfterPaste" : false,
+        "productFrontmostAtReceipt" : false,
+        "productFrontmostBeforePaste" : false,
+        "productPID" : 55019,
+        "promptAccessibility" : false,
+        "restoreClipboard" : true,
+        "restoreDelayMs" : 350,
+        "settleDelayMs" : 150,
+        "status" : "succeeded",
+        "syntheticPastePosted" : true,
+        "textLength" : 34,
+        "timestamp" : "2026-04-05T22:42:32Z"
+      },
+      "success" : true
+    }
+  ],
+  "eventsLogFile" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-final6\/logs\/events.jsonl",
+  "launchState" : {
+    "accessibilityTrusted" : true,
+    "appPath" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/PushWrite.app",
+    "bundleID" : "ch.baumanncreative.pushwrite",
+    "isProcessing" : false,
+    "pid" : 55019,
+    "queuedRequestCount" : 0,
+    "running" : true,
+    "runtimeDir" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-final6",
+    "timestamp" : "2026-04-05T22:41:46Z"
+  },
+  "manualLaunchCommand" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/PushWrite.app\/Contents\/MacOS\/PushWrite --runtime-dir \/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-final6",
+  "payload" : "PushWrite 002D test aeoeue ss EUR.",
+  "preflight" : {
+    "notes" : [
+
+    ],
+    "preflightKind" : "preflight",
+    "productAccessibilityTrusted" : true,
+    "productFrontmostAtReceipt" : false,
+    "productFrontmostBeforePaste" : false,
+    "productRunning" : true,
+    "safariAutomationReady" : true,
+    "textEditAutomationReady" : true
+  },
+  "productAppPath" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/PushWrite.app",
+  "productRuntimeDir" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-final6",
+  "safari" : {
+    "failureReasons" : {
+
+    },
+    "focusAfterTargetAppCount" : 5,
+    "focusAtReceiptTargetAppCount" : 5,
+    "focusBeforeTargetAppCount" : 5,
+    "name" : "safari",
+    "productFrontmostAfterPasteCount" : 0,
+    "productFrontmostAtReceiptCount" : 0,
+    "productFrontmostBeforePasteCount" : 0,
+    "records" : [
+      {
+        "failureReasons" : [
+
+        ],
+        "iteration" : 1,
+        "productResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002D test aeoeue ss EUR."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "id" : "9AC83BDD-BEBE-452E-90A1-2BB3971B7C3A",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 55019,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 34,
+          "timestamp" : "2026-04-05T22:42:11Z"
+        },
+        "success" : true,
+        "targetValue" : "PushWrite 002D test aeoeue ss EUR."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "iteration" : 2,
+        "productResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002D test aeoeue ss EUR."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "id" : "6490730B-D936-4D24-83BD-BD76B208C2AF",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 55019,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 34,
+          "timestamp" : "2026-04-05T22:42:15Z"
+        },
+        "success" : true,
+        "targetValue" : "PushWrite 002D test aeoeue ss EUR."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "iteration" : 3,
+        "productResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002D test aeoeue ss EUR."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "id" : "6DE3C1D8-8862-47CF-8444-B4AE7F2D9AC1",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 55019,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 34,
+          "timestamp" : "2026-04-05T22:42:19Z"
+        },
+        "success" : true,
+        "targetValue" : "PushWrite 002D test aeoeue ss EUR."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "iteration" : 4,
+        "productResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002D test aeoeue ss EUR."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "id" : "5E095D97-921A-4BEB-A85B-0ECD077A012C",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 55019,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 34,
+          "timestamp" : "2026-04-05T22:42:22Z"
+        },
+        "success" : true,
+        "targetValue" : "PushWrite 002D test aeoeue ss EUR."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "iteration" : 5,
+        "productResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002D test aeoeue ss EUR."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "id" : "3260D4DA-A2E3-4E06-994C-DA5B61850879",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 55019,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 34,
+          "timestamp" : "2026-04-05T22:42:26Z"
+        },
+        "success" : true,
+        "targetValue" : "PushWrite 002D test aeoeue ss EUR."
+      }
+    ],
+    "runCount" : 5,
+    "successCount" : 5
+  },
+  "textEdit" : {
+    "failureReasons" : {
+
+    },
+    "focusAfterTargetAppCount" : 5,
+    "focusAtReceiptTargetAppCount" : 5,
+    "focusBeforeTargetAppCount" : 5,
+    "name" : "textedit",
+    "productFrontmostAfterPasteCount" : 0,
+    "productFrontmostAtReceiptCount" : 0,
+    "productFrontmostBeforePasteCount" : 0,
+    "records" : [
+      {
+        "failureReasons" : [
+
+        ],
+        "iteration" : 1,
+        "productResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "id" : "AC5CE0AD-9D71-448E-AD0A-4017FE0AF2AD",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 55019,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 34,
+          "timestamp" : "2026-04-05T22:41:58Z"
+        },
+        "success" : true,
+        "targetValue" : "PushWrite 002D test aeoeue ss EUR."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "iteration" : 2,
+        "productResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002D test aeoeue ss EUR."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "id" : "684535D6-592D-434E-A27A-4CA21D300C72",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 55019,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 34,
+          "timestamp" : "2026-04-05T22:42:01Z"
+        },
+        "success" : true,
+        "targetValue" : "PushWrite 002D test aeoeue ss EUR."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "iteration" : 3,
+        "productResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002D test aeoeue ss EUR."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "id" : "D877385A-A040-471B-957D-F00A6CBDB416",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 55019,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 34,
+          "timestamp" : "2026-04-05T22:42:03Z"
+        },
+        "success" : true,
+        "targetValue" : "PushWrite 002D test aeoeue ss EUR."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "iteration" : 4,
+        "productResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002D test aeoeue ss EUR."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "id" : "E6FC5100-0D6C-4213-A9B6-125356A2062B",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 55019,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 34,
+          "timestamp" : "2026-04-05T22:42:05Z"
+        },
+        "success" : true,
+        "targetValue" : "PushWrite 002D test aeoeue ss EUR."
+      },
+      {
+        "failureReasons" : [
+
+        ],
+        "iteration" : 5,
+        "productResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002D test aeoeue ss EUR."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "id" : "18F3679E-1597-4F60-86BB-75C2D26F85F6",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 55019,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 34,
+          "timestamp" : "2026-04-05T22:42:08Z"
+        },
+        "success" : true,
+        "targetValue" : "PushWrite 002D test aeoeue ss EUR."
+      }
+    ],
+    "runCount" : 5,
+    "successCount" : 5
+  },
+  "timestamp" : "2026-04-05T22:42:32Z"
+}

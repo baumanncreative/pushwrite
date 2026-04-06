@@ -1,0 +1,83 @@
+{
+  "timestamp": "2026-04-06T12:20:00Z",
+  "productAppPath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+  "simulatedText": "PushWrite 002E simulated transcription.",
+  "hotKey": {
+    "descriptor": "Control+Option+Command+P",
+    "keyCode": 35,
+    "carbonModifiers": 6400,
+    "registered": true
+  },
+  "successLaunch": {
+    "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002e-success-manual",
+    "launchMode": "open -a PushWrite.app --args",
+    "forceAccessibilityTrusted": true
+  },
+  "textEdit": {
+    "responseID": "80FD0ED8-E077-40FA-BAF8-991D24802FE0",
+    "status": "succeeded",
+    "kind": "insertTranscription",
+    "insertRoute": "pasteboardCommandV",
+    "insertSource": "transcription",
+    "syntheticPastePosted": true,
+    "focusAppBundleID": "com.apple.TextEdit",
+    "focusRoleAfterPaste": "AXTextArea",
+    "valueAfterPaste": "PushWrite 002E simulated transcription.",
+    "productFrontmostAtReceipt": false,
+    "productFrontmostBeforePaste": false,
+    "productFrontmostAfterPaste": false,
+    "flowStates": [
+      "triggered",
+      "inserting",
+      "done"
+    ]
+  },
+  "safariTextarea": {
+    "responseID": "B363A41F-E235-4E83-9B5D-93B7108B101E",
+    "status": "succeeded",
+    "kind": "insertTranscription",
+    "insertRoute": "pasteboardCommandV",
+    "insertSource": "transcription",
+    "syntheticPastePosted": true,
+    "focusAppBundleID": "com.apple.Safari",
+    "focusRoleAfterPaste": "AXTextArea",
+    "valueAfterPaste": "PushWrite 002E simulated transcription.",
+    "productFrontmostAtReceipt": false,
+    "productFrontmostBeforePaste": false,
+    "productFrontmostAfterPaste": false,
+    "flowStates": [
+      "triggered",
+      "inserting",
+      "done"
+    ]
+  },
+  "blocked": {
+    "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002e-blocked-manual",
+    "forceAccessibilityBlocked": true,
+    "responseID": "57CA68B2-BEE2-4A87-9EC8-DC6FD8B6968A",
+    "status": "blocked",
+    "kind": "insertTranscription",
+    "insertRoute": "pasteboardCommandV",
+    "insertSource": "transcription",
+    "syntheticPastePosted": false,
+    "blockedReason": "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V.",
+    "textEditValueAfterTrigger": "",
+    "productFrontmostAtReceipt": false,
+    "productFrontmostBeforePaste": false,
+    "productFrontmostAfterPaste": false,
+    "focusAppBundleIDObservedInResponse": "com.openai.codex",
+    "flowStates": [
+      "triggered",
+      "inserting",
+      "blocked"
+    ]
+  },
+  "openPoints": [
+    "Fresh success validation still depended on the dev flag --force-accessibility-trusted after rebuild.",
+    "Blocked validation was reproduced with --force-accessibility-blocked instead of a real TCC reset.",
+    "The nested validator launch path was still unstable with sporadic kLSNoExecutableErr.",
+    "Blocked-flow focus snapshots were not yet consistent with the intended target app."
+  ],
+  "mvpClassification": "tragfaehig mit kleiner, aber zwingender Resthaertung im Start-/TCC-Pfad",
+  "followUpTask": "002F: stabilize real product launch and TCC handling, clean blocked focus observation, and only then cut microphone start/stop onto the same hotkey flow."
+}

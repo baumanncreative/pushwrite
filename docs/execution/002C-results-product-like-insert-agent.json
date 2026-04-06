@@ -1,0 +1,148 @@
+{
+  "timestamp": "2026-04-05T22:06:32Z",
+  "agentAppPath": "/tmp/pushwrite-insert-agent-build/PushWriteInsertAgent.app",
+  "agentRuntimeDir": "/tmp/pushwrite-insert-agent-validation",
+  "manualLaunchCommand": "open -a /tmp/pushwrite-insert-agent-build/PushWriteInsertAgent.app --args --runtime-dir /tmp/pushwrite-insert-agent-validation",
+  "launchState": {
+    "accessibilityTrusted": false,
+    "blockedReason": "Accessibility access is required before PushWriteInsertAgent can post synthetic Cmd+V events.",
+    "bundleID": "ch.baumanncreative.pushwrite.InsertAgent",
+    "isProcessing": false,
+    "pid": 45899,
+    "queuedRequestCount": 0,
+    "running": true,
+    "runtimeDir": "/tmp/pushwrite-insert-agent-validation",
+    "timestamp": "2026-04-05T22:05:48Z"
+  },
+  "preflightBlocked": {
+    "accessibilityTrusted": false,
+    "agentBundleID": "ch.baumanncreative.pushwrite.InsertAgent",
+    "agentFrontmostAfterPaste": false,
+    "agentFrontmostAtReceipt": false,
+    "agentFrontmostBeforePaste": false,
+    "agentPID": 45899,
+    "blockedReason": "Accessibility access is required before PushWriteInsertAgent can post synthetic Cmd+V events.",
+    "clipboardRestored": false,
+    "focusAfterPaste": {
+      "app": {
+        "bundleID": "com.apple.systempreferences",
+        "name": "Systemeinstellungen",
+        "pid": 45647
+      }
+    },
+    "focusAtReceipt": {
+      "app": {
+        "bundleID": "com.apple.systempreferences",
+        "name": "Systemeinstellungen",
+        "pid": 45647
+      }
+    },
+    "focusBeforePaste": {
+      "app": {
+        "bundleID": "com.apple.systempreferences",
+        "name": "Systemeinstellungen",
+        "pid": 45647
+      }
+    },
+    "id": "58B73FA8-DF95-4368-90E9-7517BD0E9596",
+    "kind": "preflight",
+    "pasteDelayMs": 120,
+    "promptAccessibility": false,
+    "restoreClipboard": false,
+    "restoreDelayMs": 350,
+    "settleDelayMs": 150,
+    "status": "blocked",
+    "syntheticPastePosted": false,
+    "textLength": 0,
+    "timestamp": "2026-04-05T22:06:14Z"
+  },
+  "preflightPromptBlocked": {
+    "accessibilityTrusted": false,
+    "agentBundleID": "ch.baumanncreative.pushwrite.InsertAgent",
+    "agentFrontmostAfterPaste": false,
+    "agentFrontmostAtReceipt": false,
+    "agentFrontmostBeforePaste": false,
+    "agentPID": 45899,
+    "blockedReason": "Accessibility access is required before PushWriteInsertAgent can post synthetic Cmd+V events.",
+    "clipboardRestored": false,
+    "focusAfterPaste": {
+      "app": {
+        "bundleID": "com.apple.systempreferences",
+        "name": "Systemeinstellungen",
+        "pid": 45647
+      }
+    },
+    "focusAtReceipt": {
+      "app": {
+        "bundleID": "com.apple.systempreferences",
+        "name": "Systemeinstellungen",
+        "pid": 45647
+      }
+    },
+    "focusBeforePaste": {
+      "app": {
+        "bundleID": "com.apple.systempreferences",
+        "name": "Systemeinstellungen",
+        "pid": 45647
+      }
+    },
+    "id": "946E2A87-95FB-4C60-9C4C-0207A41DC6AE",
+    "kind": "preflight",
+    "pasteDelayMs": 120,
+    "promptAccessibility": true,
+    "restoreClipboard": false,
+    "restoreDelayMs": 350,
+    "settleDelayMs": 150,
+    "status": "blocked",
+    "syntheticPastePosted": false,
+    "textLength": 0,
+    "timestamp": "2026-04-05T22:06:20Z"
+  },
+  "blockedInsert": {
+    "accessibilityTrusted": false,
+    "agentBundleID": "ch.baumanncreative.pushwrite.InsertAgent",
+    "agentFrontmostAfterPaste": false,
+    "agentFrontmostAtReceipt": false,
+    "agentFrontmostBeforePaste": false,
+    "agentPID": 45899,
+    "blockedReason": "Accessibility access is required before PushWriteInsertAgent can post synthetic Cmd+V events.",
+    "clipboardRestored": false,
+    "focusAfterPaste": {
+      "app": {
+        "bundleID": "com.apple.systempreferences",
+        "name": "Systemeinstellungen",
+        "pid": 45647
+      }
+    },
+    "focusAtReceipt": {
+      "app": {
+        "bundleID": "com.apple.systempreferences",
+        "name": "Systemeinstellungen",
+        "pid": 45647
+      }
+    },
+    "focusBeforePaste": {
+      "app": {
+        "bundleID": "com.apple.systempreferences",
+        "name": "Systemeinstellungen",
+        "pid": 45647
+      }
+    },
+    "id": "4D9751B7-B491-4FE1-95AD-D28421BDBBEA",
+    "kind": "insert",
+    "pasteDelayMs": 120,
+    "promptAccessibility": false,
+    "restoreClipboard": false,
+    "restoreDelayMs": 350,
+    "settleDelayMs": 150,
+    "status": "blocked",
+    "syntheticPastePosted": false,
+    "textLength": 22,
+    "timestamp": "2026-04-05T22:06:32Z"
+  },
+  "notes": [
+    "The product-like agent launches and writes its runtime state as a background LSUIElement process.",
+    "The new app bundle is not yet trusted for Accessibility in this environment, so successful TextEdit and Safari insert runs were not re-executed on the new bundle.",
+    "The insert implementation is the same validated pasteboard-plus-Cmd+V path from 002B, now wrapped in a long-lived request/response agent."
+  ]
+}
