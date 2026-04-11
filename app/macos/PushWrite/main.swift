@@ -1333,12 +1333,14 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         lastRequestID = response.id
         lastResponseStatus = response.status
         lastBlockedReason = response.blockedReason
-        try? writeState(running: true)
 
         if response.kind == .shutdown {
+            try? writeState(running: false)
             NSApp.terminate(nil)
             return
         }
+
+        try? writeState(running: true)
 
         processNextRequestIfNeeded()
     }

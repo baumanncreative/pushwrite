@@ -13,6 +13,8 @@ struct Options {
     var productAppPath: String?
     var resultsFile: String?
     var skipBuild = false
+    var skipLaunch = false
+    var skipBlockedValidation = false
 }
 
 struct AppSnapshot: Codable {
@@ -109,9 +111,16 @@ struct ProductResponse: Codable {
     let error: String?
 }
 
+struct SuccessCriteria: Codable {
+    let rule: String
+    let notes: [String]
+}
+
 struct ContextRunRecord: Codable {
     let iteration: Int
     let success: Bool
+    let productResponseSucceeded: Bool
+    let observedTargetValueMatches: Bool
     let targetValue: String
     let frontmostBundleAfterTrigger: String?
     let hotKeyResponse: ProductResponse
@@ -123,6 +132,9 @@ struct ContextSummary: Codable {
     let name: String
     let runCount: Int
     let successCount: Int
+    let strictSuccessRule: String
+    let productResponseSucceededCount: Int
+    let observedTargetValueMatchesCount: Int
     let failureReasons: [String: Int]
     let focusAtReceiptTargetAppCount: Int
     let focusBeforeTargetAppCount: Int
@@ -143,6 +155,7 @@ struct HotKeyPreflightSummary: Codable {
     let launchFlowState: String
     let launchFlowTrigger: String?
     let forceAccessibilityTrusted: Bool
+    let notes: [String]
 }
 
 struct BlockedHotKeySummary: Codable {
@@ -161,10 +174,11 @@ struct ValidationSummary: Codable {
     let successRuntimeDir: String
     let blockedRuntimeDir: String
     let manualLaunchCommand: String
+    let successCriteria: SuccessCriteria
     let preflight: HotKeyPreflightSummary
     let textEdit: ContextSummary
     let safari: ContextSummary
-    let blocked: BlockedHotKeySummary
+    let blocked: BlockedHotKeySummary?
     let successFlowEventsLogFile: String
     let blockedFlowEventsLogFile: String
     let lastHotKeyResponseFile: String
@@ -247,6 +261,10 @@ func parseOptions(arguments: [String]) throws -> Options {
             options.resultsFile = try requireValue(for: argument)
         case "--skip-build":
             options.skipBuild = true
+        case "--skip-launch":
+            options.skipLaunch = true
+        case "--skip-blocked-validation":
+            options.skipBlockedValidation = true
         default:
             throw ValidationError.unknownArgument(argument)
         }
@@ -361,6 +379,14 @@ func buildProduct(repoRoot: String, outputDir: String) throws -> URL {
     return URL(fileURLWithPath: appPath)
 }
 
+func stableProductAppPath(repoRoot: String) -> String {
+    "\(repoRoot)/build/pushwrite-product/PushWrite.app"
+}
+
+func candidateProductOutputDir(repoRoot: String) -> String {
+    "\(repoRoot)/build/pushwrite-product-candidate"
+}
+
 func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
     if let productAppPath = options.productAppPath {
         let url = URL(fileURLWithPath: productAppPath)
@@ -370,16 +396,18 @@ func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
         return url
     }
 
-    if options.skipBuild {
-        let defaultPath = "\(repoRoot)/build/pushwrite-product/PushWrite.app"
-        let url = URL(fileURLWithPath: defaultPath)
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw ValidationError.controlFailed("Missing product app at \(url.path)")
-        }
-        return url
+    let stableURL = URL(fileURLWithPath: stableProductAppPath(repoRoot: repoRoot))
+    if FileManager.default.fileExists(atPath: stableURL.path) {
+        return stableURL
     }
 
-    let outputDir = options.productOutputDir.isEmpty ? "\(repoRoot)/build/pushwrite-product" : options.productOutputDir
+    if options.skipBuild {
+        throw ValidationError.controlFailed(
+            "Missing stable product app at \(stableURL.path). Build a candidate bundle with scripts/build_pushwrite_product.sh, promote it explicitly, or pass --product-app-path to validate a non-stable bundle."
+        )
+    }
+
+    let outputDir = options.productOutputDir.isEmpty ? candidateProductOutputDir(repoRoot: repoRoot) : options.productOutputDir
     let existingBundleURL = URL(fileURLWithPath: "\(outputDir)/PushWrite.app")
     if FileManager.default.fileExists(atPath: existingBundleURL.path) {
         return existingBundleURL
@@ -388,12 +416,46 @@ func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
     return try buildProduct(repoRoot: repoRoot, outputDir: outputDir)
 }
 
-func launchCommand(productAppPath: String, runtimeDir: String, simulatedText: String? = nil, forceAccessibilityBlocked: Bool = false, forceAccessibilityTrusted: Bool = false) -> String {
+func emptyContextSummary(name: String) -> ContextSummary {
+    ContextSummary(
+        name: name,
+        runCount: 0,
+        successCount: 0,
+        strictSuccessRule: strictObservedInsertionSuccessRule(),
+        productResponseSucceededCount: 0,
+        observedTargetValueMatchesCount: 0,
+        failureReasons: [:],
+        focusAtReceiptTargetAppCount: 0,
+        focusBeforeTargetAppCount: 0,
+        focusAfterTargetAppCount: 0,
+        productFrontmostAtReceiptCount: 0,
+        productFrontmostBeforePasteCount: 0,
+        productFrontmostAfterPasteCount: 0,
+        frontmostAfterTriggerTargetAppCount: 0,
+        records: []
+    )
+}
+
+func strictObservedInsertionSuccessRule() -> String {
+    "Success requires observed target value == expected text and product response invariants to hold; product status=succeeded alone is insufficient."
+}
+
+func hotKeySuccessCriteria() -> SuccessCriteria {
+    SuccessCriteria(
+        rule: strictObservedInsertionSuccessRule(),
+        notes: [
+            "A run is only successful when the target context value actually matches the expected transcription text.",
+            "A product response with status=succeeded does not count as success when observed target content stays unchanged."
+        ]
+    )
+}
+
+func launchCommand(repoRoot: String, productAppPath: String, runtimeDir: String, simulatedText: String? = nil, forceAccessibilityBlocked: Bool = false, forceAccessibilityTrusted: Bool = false) -> String {
     var parts = [
-        "open",
-        "-n",
+        shellEscape("\(repoRoot)/scripts/control_pushwrite_product.sh"),
+        "launch",
+        "--product-app",
         shellEscape(productAppPath),
-        "--args",
         "--runtime-dir",
         shellEscape(runtimeDir)
     ]
@@ -434,26 +496,70 @@ func launchProduct(
     forceAccessibilityBlocked: Bool,
     forceAccessibilityTrusted: Bool
 ) throws -> ProductState {
-    var arguments = [
-        "launch",
-        "--timeout-ms",
-        "20000",
-        "--simulated-text",
+    let appURL = URL(fileURLWithPath: productAppPath)
+    guard FileManager.default.fileExists(atPath: appURL.path) else {
+        throw ValidationError.controlFailed("Missing product app at \(appURL.path)")
+    }
+
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
+    configuration.createsNewApplicationInstance = true
+
+    var launchArguments = [
+        "--runtime-dir",
+        runtimeDir,
+        "--simulated-transcription-text",
         simulatedText
     ]
     if forceAccessibilityBlocked {
-        arguments.append("--force-accessibility-blocked")
+        launchArguments.append("--force-accessibility-blocked")
     }
     if forceAccessibilityTrusted {
-        arguments.append("--force-accessibility-trusted")
+        launchArguments.append("--force-accessibility-trusted")
     }
-    let output = try runControl(
-        repoRoot: repoRoot,
-        productAppPath: productAppPath,
-        runtimeDir: runtimeDir,
-        arguments: arguments
-    )
-    return try JSONDecoder().decode(ProductState.self, from: Data(output.utf8))
+    configuration.arguments = launchArguments
+
+    _ = NSApplication.shared
+    let deadline = Date().addingTimeInterval(20)
+    var launchError: Error?
+    var launchCompleted = false
+    DispatchQueue.main.async {
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
+            launchError = error
+            launchCompleted = true
+            CFRunLoopStop(CFRunLoopGetMain())
+        }
+    }
+
+    while !launchCompleted, Date() < deadline {
+        RunLoop.main.run(mode: .default, before: min(deadline, Date().addingTimeInterval(0.1)))
+    }
+
+    if let launchError {
+        throw ValidationError.controlFailed("PushWrite launch failed: \(launchError)")
+    }
+    if !launchCompleted {
+        throw ValidationError.timeout("launch completion did not return within 20 seconds")
+    }
+
+    try waitUntil(timeoutSeconds: 20) {
+        guard let state = try? readLaunchState(runtimeDir: runtimeDir) else {
+            return false
+        }
+        return state.running
+    }
+
+    return try readLaunchState(runtimeDir: runtimeDir)
+}
+
+func readLaunchState(runtimeDir: String) throws -> ProductState {
+    let path = "\(runtimeDir)/product-state.json"
+    let url = URL(fileURLWithPath: path)
+    guard FileManager.default.fileExists(atPath: path) else {
+        throw ValidationError.controlFailed("Missing product state file at \(path)")
+    }
+    let data = try Data(contentsOf: url)
+    return try JSONDecoder().decode(ProductState.self, from: data)
 }
 
 func stopProduct(repoRoot: String, productAppPath: String, runtimeDir: String) {
@@ -486,7 +592,7 @@ func targetBundleID(for name: String) -> String {
 
 func ensureTextEditReady() throws {
     let script = """
-    tell application id "com.apple.TextEdit"
+    tell application "TextEdit"
       activate
       if not (exists document 1) then
         make new document
@@ -503,7 +609,7 @@ func ensureTextEditReady() throws {
 
 func readTextEditValue() throws -> String {
     let script = """
-    tell application id "com.apple.TextEdit"
+    tell application "TextEdit"
       if not (exists document 1) then
         return ""
       end if
@@ -539,7 +645,7 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
 
     let fixtureURLString = escapeAppleScriptString(fixtureURL.absoluteString)
     let script = """
-    tell application id "com.apple.Safari"
+    tell application "Safari"
       activate
       if (count of windows) is 0 then
         make new document
@@ -551,7 +657,7 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
 
     try waitUntil(timeoutSeconds: 20) {
         let currentURL = try readAppleScriptString("""
-        tell application id "com.apple.Safari"
+        tell application "Safari"
           return URL of current tab of front window
         end tell
         """)
@@ -562,7 +668,7 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
 
 func readSafariTextareaValue() throws -> String {
     let currentURL = try readAppleScriptString("""
-    tell application id "com.apple.Safari"
+    tell application "Safari"
       return URL of current tab of front window
     end tell
     """)
@@ -576,7 +682,7 @@ func readSafariTextareaValue() throws -> String {
 
 func safariFixtureReady() throws -> Bool {
     let tabName = try readAppleScriptString("""
-    tell application id "com.apple.Safari"
+    tell application "Safari"
       return name of current tab of front window
     end tell
     """)
@@ -666,8 +772,14 @@ func runHotKeySeries(
     readValue: () throws -> String,
     verifyTargetIsReady: (() throws -> Bool)? = nil
 ) throws -> ContextSummary {
+    guard runCount > 0 else {
+        return emptyContextSummary(name: name)
+    }
+
     var records: [ContextRunRecord] = []
     var failureReasons: [String: Int] = [:]
+    var productResponseSucceededCount = 0
+    var observedTargetValueMatchesCount = 0
     var focusAtReceiptTargetAppCount = 0
     var focusBeforeTargetAppCount = 0
     var focusAfterTargetAppCount = 0
@@ -693,11 +805,17 @@ func runHotKeySeries(
         Thread.sleep(forTimeInterval: 0.25)
         let targetValue = try readValue()
         let frontmostAfterTrigger = frontmostBundleID()
+        let observedTargetValueMatches = targetValue == expectedText
+        let productResponseSucceeded = hotKeyResponse.status == "succeeded"
 
-        if targetValue != expectedText {
+        if observedTargetValueMatches {
+            observedTargetValueMatchesCount += 1
+        } else {
             reasons.append("target-value-mismatch")
         }
-        if hotKeyResponse.status != "succeeded" {
+        if productResponseSucceeded {
+            productResponseSucceededCount += 1
+        } else {
             reasons.append("product-status-\(hotKeyResponse.status)")
         }
         if hotKeyResponse.kind != "insertTranscription" {
@@ -765,6 +883,8 @@ func runHotKeySeries(
             ContextRunRecord(
                 iteration: iteration,
                 success: reasons.isEmpty,
+                productResponseSucceeded: productResponseSucceeded,
+                observedTargetValueMatches: observedTargetValueMatches,
                 targetValue: targetValue,
                 frontmostBundleAfterTrigger: frontmostAfterTrigger,
                 hotKeyResponse: hotKeyResponse,
@@ -778,6 +898,9 @@ func runHotKeySeries(
         name: name,
         runCount: runCount,
         successCount: records.filter(\.success).count,
+        strictSuccessRule: strictObservedInsertionSuccessRule(),
+        productResponseSucceededCount: productResponseSucceededCount,
+        observedTargetValueMatchesCount: observedTargetValueMatchesCount,
         failureReasons: failureReasons,
         focusAtReceiptTargetAppCount: focusAtReceiptTargetAppCount,
         focusBeforeTargetAppCount: focusBeforeTargetAppCount,
@@ -858,7 +981,7 @@ do {
 }
 
 if options.productOutputDir.isEmpty {
-    options.productOutputDir = "\(repoRoot)/build/pushwrite-product"
+    options.productOutputDir = candidateProductOutputDir(repoRoot: repoRoot)
 }
 if options.successRuntimeDir.isEmpty {
     options.successRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-hotkey-success"
@@ -879,15 +1002,19 @@ let fixtureURL = URL(fileURLWithPath: "\(repoRoot)/tests/integration/browser-tex
 
 let successLaunchState: ProductState
 do {
-    try? FileManager.default.removeItem(atPath: options.successRuntimeDir)
-    successLaunchState = try launchProduct(
-        repoRoot: repoRoot,
-        productAppPath: productAppURL.path,
-        runtimeDir: options.successRuntimeDir,
-        simulatedText: options.simulatedText,
-        forceAccessibilityBlocked: false,
-        forceAccessibilityTrusted: true
-    )
+    if options.skipLaunch {
+        successLaunchState = try readLaunchState(runtimeDir: options.successRuntimeDir)
+    } else {
+        try? FileManager.default.removeItem(atPath: options.successRuntimeDir)
+        successLaunchState = try launchProduct(
+            repoRoot: repoRoot,
+            productAppPath: productAppURL.path,
+            runtimeDir: options.successRuntimeDir,
+            simulatedText: options.simulatedText,
+            forceAccessibilityBlocked: false,
+            forceAccessibilityTrusted: false
+        )
+    }
 } catch {
     fputs("Product launch failed: \(error)\n", stderr)
     exit(1)
@@ -905,16 +1032,73 @@ let preflight = HotKeyPreflightSummary(
     hotKeyRegistrationError: successLaunchState.hotKey.registrationError,
     launchFlowState: successLaunchState.flow.state,
     launchFlowTrigger: successLaunchState.flow.trigger,
-    forceAccessibilityTrusted: true
+    forceAccessibilityTrusted: false,
+    notes: successLaunchState.accessibilityTrusted
+        ? []
+        : ["Accessibility is not trusted for the selected product bundle. Success-path validation was skipped; blocked-path observation ran against the real bundle/runtime instead."]
 )
-
-guard preflight.accessibilityTrusted else {
-    fputs("Accessibility is not trusted for the success runtime.\n", stderr)
-    exit(1)
-}
 
 guard preflight.hotKeyRegistered else {
     fputs("Global hotkey did not register: \(preflight.hotKeyRegistrationError ?? "unknown error")\n", stderr)
+    exit(1)
+}
+
+if !preflight.accessibilityTrusted {
+    let blockedSummary: BlockedHotKeySummary
+    do {
+        blockedSummary = try runBlockedHotKeyValidation(
+            launchState: successLaunchState,
+            runtimeDir: options.successRuntimeDir
+        )
+    } catch {
+        fputs("Blocked hotkey observation failed: \(error)\n", stderr)
+        exit(1)
+    }
+
+    let summary = ValidationSummary(
+        timestamp: isoTimestamp(),
+        simulatedText: options.simulatedText,
+        productAppPath: productAppURL.path,
+        successRuntimeDir: options.successRuntimeDir,
+        blockedRuntimeDir: options.successRuntimeDir,
+        manualLaunchCommand: launchCommand(
+            repoRoot: repoRoot,
+            productAppPath: productAppURL.path,
+            runtimeDir: options.successRuntimeDir,
+            simulatedText: options.simulatedText
+        ),
+        successCriteria: hotKeySuccessCriteria(),
+        preflight: preflight,
+        textEdit: emptyContextSummary(name: "textedit"),
+        safari: emptyContextSummary(name: "safari"),
+        blocked: blockedSummary,
+        successFlowEventsLogFile: "",
+        blockedFlowEventsLogFile: "\(options.successRuntimeDir)/logs/flow-events.jsonl",
+        lastHotKeyResponseFile: "\(options.successRuntimeDir)/logs/last-hotkey-response.json"
+    )
+
+    if let resultsFile = options.resultsFile {
+        do {
+            try writeSummary(summary, to: resultsFile)
+        } catch {
+            fputs("Could not write results file: \(error)\n", stderr)
+            exit(1)
+        }
+    }
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    do {
+        let data = try encoder.encode(summary)
+        if let string = String(data: data, encoding: .utf8) {
+            print(string)
+        }
+    } catch {
+        fputs("Could not encode summary: \(error)\n", stderr)
+        exit(1)
+    }
+
+    fputs("Accessibility is not trusted for the selected product bundle.\n", stderr)
     exit(1)
 }
 
@@ -961,35 +1145,39 @@ do {
 
 stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.successRuntimeDir)
 
-let blockedLaunchState: ProductState
-do {
-    try? FileManager.default.removeItem(atPath: options.blockedRuntimeDir)
-    blockedLaunchState = try launchProduct(
-        repoRoot: repoRoot,
-        productAppPath: productAppURL.path,
-        runtimeDir: options.blockedRuntimeDir,
-        simulatedText: options.simulatedText,
-        forceAccessibilityBlocked: true,
-        forceAccessibilityTrusted: false
-    )
-} catch {
-    fputs("Blocked runtime launch failed: \(error)\n", stderr)
-    exit(1)
-}
+let blockedSummary: BlockedHotKeySummary?
+if options.skipBlockedValidation {
+    blockedSummary = nil
+} else {
+    let blockedLaunchState: ProductState
+    do {
+        try? FileManager.default.removeItem(atPath: options.blockedRuntimeDir)
+        blockedLaunchState = try launchProduct(
+            repoRoot: repoRoot,
+            productAppPath: productAppURL.path,
+            runtimeDir: options.blockedRuntimeDir,
+            simulatedText: options.simulatedText,
+            forceAccessibilityBlocked: true,
+            forceAccessibilityTrusted: false
+        )
+    } catch {
+        fputs("Blocked runtime launch failed: \(error)\n", stderr)
+        exit(1)
+    }
 
-defer {
-    stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.blockedRuntimeDir)
-}
+    defer {
+        stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.blockedRuntimeDir)
+    }
 
-let blockedSummary: BlockedHotKeySummary
-do {
-    blockedSummary = try runBlockedHotKeyValidation(
-        launchState: blockedLaunchState,
-        runtimeDir: options.blockedRuntimeDir
-    )
-} catch {
-    fputs("Blocked hotkey validation failed: \(error)\n", stderr)
-    exit(1)
+    do {
+        blockedSummary = try runBlockedHotKeyValidation(
+            launchState: blockedLaunchState,
+            runtimeDir: options.blockedRuntimeDir
+        )
+    } catch {
+        fputs("Blocked hotkey validation failed: \(error)\n", stderr)
+        exit(1)
+    }
 }
 
 let summary = ValidationSummary(
@@ -999,16 +1187,18 @@ let summary = ValidationSummary(
     successRuntimeDir: options.successRuntimeDir,
     blockedRuntimeDir: options.blockedRuntimeDir,
     manualLaunchCommand: launchCommand(
+        repoRoot: repoRoot,
         productAppPath: productAppURL.path,
         runtimeDir: options.successRuntimeDir,
         simulatedText: options.simulatedText
     ),
+    successCriteria: hotKeySuccessCriteria(),
     preflight: preflight,
     textEdit: textEditSummary,
     safari: safariSummary,
     blocked: blockedSummary,
     successFlowEventsLogFile: "\(options.successRuntimeDir)/logs/flow-events.jsonl",
-    blockedFlowEventsLogFile: "\(options.blockedRuntimeDir)/logs/flow-events.jsonl",
+    blockedFlowEventsLogFile: options.skipBlockedValidation ? "" : "\(options.blockedRuntimeDir)/logs/flow-events.jsonl",
     lastHotKeyResponseFile: "\(options.successRuntimeDir)/logs/last-hotkey-response.json"
 )
 

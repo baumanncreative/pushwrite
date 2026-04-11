@@ -362,16 +362,27 @@ func launchProduct(options: Options) throws -> ProductState {
     }
     configuration.arguments = arguments
 
-    let semaphore = DispatchSemaphore(value: 0)
+    _ = NSApplication.shared
+    let deadline = Date().addingTimeInterval(Double(max(1, options.timeoutMs)) / 1_000.0)
     var launchError: Error?
-    NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
-        launchError = error
-        semaphore.signal()
+    var launchCompleted = false
+    DispatchQueue.main.async {
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
+            launchError = error
+            launchCompleted = true
+            CFRunLoopStop(CFRunLoopGetMain())
+        }
     }
 
-    _ = semaphore.wait(timeout: .now() + .seconds(max(1, options.timeoutMs / 1_000)))
+    while !launchCompleted, Date() < deadline {
+        RunLoop.main.run(mode: .default, before: min(deadline, Date().addingTimeInterval(0.1)))
+    }
+
     if let launchError {
         throw ControlError.productNotRunning("PushWrite launch failed: \(launchError)")
+    }
+    if !launchCompleted {
+        throw ControlError.timeout("launch completion did not return within \(options.timeoutMs)ms")
     }
 
     try waitUntil(timeoutMs: options.timeoutMs) {

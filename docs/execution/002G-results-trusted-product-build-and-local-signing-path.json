@@ -1,0 +1,139 @@
+{
+  "task": "002G",
+  "timestamp": "2026-04-11T10:09:21Z",
+  "stableCandidateStrategy": {
+    "stableBundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+    "candidateBundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product-candidate/PushWrite.app",
+    "candidateBuildCommand": "/Users/michel/Code/pushwrite/scripts/build_pushwrite_product.sh",
+    "promotionCommand": "/Users/michel/Code/pushwrite/scripts/promote_pushwrite_product_candidate.sh",
+    "validationDefaultPath": "stable-first",
+    "rules": [
+      "Builds go to candidate by default.",
+      "Direct builds into the stable output directory are rejected.",
+      "Stable is only replaced through explicit promotion.",
+      "Validators prefer the stable bundle unless an explicit product path is passed."
+    ]
+  },
+  "signingIdentity": {
+    "bundleIdentifier": "ch.baumanncreative.pushwrite",
+    "signature": "adhoc",
+    "cdhash": "461a4ebceba89aa627aa82430d24695cae4f0def",
+    "designatedRequirement": "cdhash H\"461a4ebceba89aa627aa82430d24695cae4f0def\"",
+    "stableIdentityFile": "/Users/michel/Code/pushwrite/build/pushwrite-product/bundle-identity.txt",
+    "candidateIdentityFile": "/Users/michel/Code/pushwrite/build/pushwrite-product-candidate/build-identity.txt",
+    "stableExecutableSha1": "2764cd2a69f80ec7a2d97cdc5a78fc746dc2843f",
+    "candidateExecutableSha1": "2764cd2a69f80ec7a2d97cdc5a78fc746dc2843f",
+    "stableAndCandidateMatch": true
+  },
+  "validatorPolicy": {
+    "successRule": "Success requires observed target value == expected text and product response invariants to hold; product status=succeeded alone is insufficient.",
+    "changedScripts": [
+      "scripts/run_pushwrite_hotkey_validation.swift",
+      "scripts/run_pushwrite_product_validation.swift"
+    ],
+    "newFields": [
+      "ValidationSummary.successCriteria",
+      "ContextSummary.strictSuccessRule",
+      "ContextSummary.productResponseSucceededCount",
+      "ContextSummary.observedTargetValueMatchesCount",
+      "ContextRunRecord.productResponseSucceeded",
+      "ContextRunRecord.observedTargetValueMatches"
+    ]
+  },
+  "gesichertBeobachtet": [
+    {
+      "topic": "stable_and_candidate_identity",
+      "evidence": [
+        "/Users/michel/Code/pushwrite/build/pushwrite-product/bundle-identity.txt",
+        "/Users/michel/Code/pushwrite/build/pushwrite-product-candidate/build-identity.txt"
+      ],
+      "facts": [
+        "Stable and candidate currently have the same bundle identifier.",
+        "Stable and candidate are ad-hoc signed.",
+        "Stable and candidate currently share the same CDHash.",
+        "Stable and candidate executables currently have the same SHA-1."
+      ]
+    },
+    {
+      "topic": "stable_bundle_product_start",
+      "evidence": [
+        "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002g-real-blocked-rerun/product-state.json"
+      ],
+      "facts": [
+        "The stable bundle starts through the control wrapper.",
+        "The product reports accessibilityTrusted=false on the real stable bundle.",
+        "The product reports hotKey.registered=true on the real stable bundle."
+      ]
+    },
+    {
+      "topic": "real_blocked_hotkey_path",
+      "evidence": [
+        "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002g-real-blocked/logs/hotkey-responses.jsonl",
+        "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002g-real-blocked/logs/flow-events.jsonl"
+      ],
+      "facts": [
+        "Blocked hotkey responses exist on the stable bundle runtime.",
+        "The blocked responses carry syntheticPastePosted=false.",
+        "The corresponding flow states are triggered -> inserting -> blocked."
+      ]
+    },
+    {
+      "topic": "false_success_risk",
+      "evidence": [
+        "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002g-forced-trusted-textedit/logs/last-hotkey-response.json",
+        "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002g-forced-trusted-textedit/logs/flow-events.jsonl",
+        "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002g-forced-trusted-safari/logs/last-hotkey-response.json",
+        "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002g-forced-trusted-safari/logs/flow-events.jsonl"
+      ],
+      "facts": [
+        "Forced-trusted TextEdit and Safari runs reached product status=succeeded.",
+        "Those runs also reached flow state done and syntheticPastePosted=true.",
+        "During the same session, the validator observed targetValue='' and recorded target-value-mismatch for both runs.",
+        "The temporary validator result files from that earlier session are no longer present in /tmp, but the observation itself was direct."
+      ]
+    },
+    {
+      "topic": "status_artifact_inconsistency",
+      "evidence": [
+        "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002g-product-preflight/product-state.json"
+      ],
+      "facts": [
+        "A product-state artifact still reports running=true even though lastResponseStatus=stopped and the process is no longer active."
+      ]
+    },
+    {
+      "topic": "current_hotkey_reruns_invalid",
+      "evidence": [
+        "2026-04-11 blocked rerun stderr: Blocked hotkey observation failed: Timed out: Condition not met within 10.0 seconds.",
+        "2026-04-11 TextEdit rerun stderr: TextEdit hotkey series failed: Timed out: Condition not met within 10.0 seconds.",
+        "2026-04-11 Safari rerun stderr: Safari hotkey series failed: Timed out: Condition not met within 20.0 seconds."
+      ],
+      "facts": [
+        "These reruns do not count as new success evidence."
+      ]
+    }
+  ],
+  "plausibleSchlussfolgerung": [
+    "Accessibility trust should be treated as stable-bundle scoped, not candidate-build scoped.",
+    "Replacing the stable bundle with a different promoted candidate may require a fresh Accessibility grant.",
+    "The current ad-hoc signature and CDHash-bound designated requirement are the most plausible reason why rebuilds can invalidate trust.",
+    "The 2026-04-11 hotkey rerun timeout is more likely a validator-side trigger issue than proof of a product-flow regression."
+  ],
+  "nochOffen": [
+    "Why the hotkey validator did not produce a new last-hotkey-response entry on 2026-04-11 despite a single running product instance.",
+    "Whether System Events based hotkey emission has become the fragile part of the validation path.",
+    "A deterministic fix for stale running=true status artifacts after stop.",
+    "Whether a fixed local signing identity should replace ad-hoc signing for longer-lived trust retention."
+  ],
+  "mvpEinordnung": "im_wesentlichen_tragfaehig_mit_kleiner_resthaertung",
+  "konkreterFolgeauftrag": {
+    "id": "002H",
+    "title": "Hotkey-Validator-Ausloesung und Statusartefakt final haerten",
+    "scope": [
+      "Restore deterministic hotkey emission for the stable-bundle validator.",
+      "Make product-state.json consistent after stop.",
+      "Re-run one real stable-bundle TextEdit success case and one Safari success case.",
+      "Confirm the new observedTargetValueMatches fields with fresh green evidence."
+    ]
+  }
+}

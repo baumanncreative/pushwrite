@@ -1,0 +1,273 @@
+{
+  "blocked" : {
+    "failureReasons" : [
+
+    ],
+    "flowStates" : [
+      "triggered",
+      "inserting",
+      "blocked"
+    ],
+    "frontmostBundleAfterTrigger" : "com.apple.TextEdit",
+    "hotKeyResponse" : {
+      "accessibilityTrusted" : false,
+      "blockedReason" : "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V.",
+      "clipboardRestored" : false,
+      "focusAfterPaste" : {
+        "app" : {
+          "bundleID" : "com.apple.TextEdit",
+          "name" : "TextEdit",
+          "pid" : 13627
+        }
+      },
+      "focusAtReceipt" : {
+        "app" : {
+          "bundleID" : "com.apple.TextEdit",
+          "name" : "TextEdit",
+          "pid" : 13627
+        }
+      },
+      "focusBeforePaste" : {
+        "app" : {
+          "bundleID" : "com.apple.TextEdit",
+          "name" : "TextEdit",
+          "pid" : 13627
+        }
+      },
+      "id" : "90499D80-A83C-4A79-8DD6-E9A50510FC97",
+      "insertRoute" : "pasteboardCommandV",
+      "insertSource" : "transcription",
+      "kind" : "insertTranscription",
+      "pasteDelayMs" : 120,
+      "productBundleID" : "ch.baumanncreative.pushwrite",
+      "productFrontmostAfterPaste" : false,
+      "productFrontmostAtReceipt" : false,
+      "productFrontmostBeforePaste" : false,
+      "productPID" : 86217,
+      "promptAccessibility" : false,
+      "restoreClipboard" : false,
+      "restoreDelayMs" : 350,
+      "settleDelayMs" : 150,
+      "status" : "blocked",
+      "syntheticPastePosted" : false,
+      "textLength" : 39,
+      "timestamp" : "2026-04-06T18:06:24Z"
+    },
+    "launchState" : {
+      "accessibilityTrusted" : false,
+      "appPath" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/PushWrite.app",
+      "blockedReason" : "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V.",
+      "bundleID" : "ch.baumanncreative.pushwrite",
+      "flow" : {
+        "state" : "idle",
+        "textLength" : 0,
+        "timestamp" : "2026-04-06T18:06:23Z"
+      },
+      "hotKey" : {
+        "carbonModifiers" : 6400,
+        "descriptor" : "Control+Option+Command+P",
+        "keyCode" : 35,
+        "registered" : true
+      },
+      "isProcessing" : false,
+      "pid" : 86217,
+      "queuedRequestCount" : 0,
+      "running" : true,
+      "runtimeDir" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-hotkey-blocked",
+      "timestamp" : "2026-04-06T18:06:23Z"
+    },
+    "textEditValueAfterTrigger" : ""
+  },
+  "blockedFlowEventsLogFile" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-hotkey-blocked\/logs\/flow-events.jsonl",
+  "blockedRuntimeDir" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-hotkey-blocked",
+  "lastHotKeyResponseFile" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-hotkey-success\/logs\/last-hotkey-response.json",
+  "manualLaunchCommand" : "'\/Users\/michel\/Code\/pushwrite\/scripts\/control_pushwrite_product.sh' launch --product-app '\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/PushWrite.app' --runtime-dir '\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-hotkey-success' --simulated-text 'PushWrite 002E simulated transcription.'",
+  "preflight" : {
+    "accessibilityTrusted" : true,
+    "forceAccessibilityTrusted" : false,
+    "hotKeyDescriptor" : "Control+Option+Command+P",
+    "hotKeyRegistered" : true,
+    "launchFlowState" : "idle"
+  },
+  "productAppPath" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/PushWrite.app",
+  "safari" : {
+    "failureReasons" : {
+
+    },
+    "focusAfterTargetAppCount" : 1,
+    "focusAtReceiptTargetAppCount" : 1,
+    "focusBeforeTargetAppCount" : 1,
+    "frontmostAfterTriggerTargetAppCount" : 1,
+    "name" : "safari",
+    "productFrontmostAfterPasteCount" : 0,
+    "productFrontmostAtReceiptCount" : 0,
+    "productFrontmostBeforePasteCount" : 0,
+    "records" : [
+      {
+        "failureReasons" : [
+
+        ],
+        "flowStates" : [
+          "triggered",
+          "inserting",
+          "done"
+        ],
+        "frontmostBundleAfterTrigger" : "com.apple.Safari",
+        "hotKeyResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : "PushWrite 002E simulated transcription."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.Safari",
+              "name" : "Safari",
+              "pid" : 9142
+            },
+            "role" : "AXTextArea",
+            "title" : "",
+            "value" : ""
+          },
+          "id" : "ACC71927-3F2E-42C6-B991-808325FA43F6",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 86182,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 39,
+          "timestamp" : "2026-04-06T18:06:21Z"
+        },
+        "iteration" : 1,
+        "success" : true,
+        "targetValue" : "PushWrite 002E simulated transcription."
+      }
+    ],
+    "runCount" : 1,
+    "successCount" : 1
+  },
+  "simulatedText" : "PushWrite 002E simulated transcription.",
+  "successFlowEventsLogFile" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-hotkey-success\/logs\/flow-events.jsonl",
+  "successRuntimeDir" : "\/Users\/michel\/Code\/pushwrite\/build\/pushwrite-product\/runtime-hotkey-success",
+  "postBuildRecheck" : {
+    "codeSignature" : {
+      "cdhash" : "6de2fef4665d1814f8e621828a425d92e49dd1ba",
+      "identifier" : "ch.baumanncreative.pushwrite",
+      "signature" : "adhoc"
+    },
+    "launchRuntimeDir" : "\/tmp\/pushwrite-002f-postbuild-launch",
+    "launchStateAccessibilityTrusted" : false,
+    "launchStateBlockedReason" : "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V.",
+    "launchStateRunning" : true,
+    "observation" : "After rebuilding the same bundle path for the final 002F code, the product launched on the stable bundle path but no longer reported a trusted Accessibility state.",
+    "stopStateRunning" : false
+  },
+  "textEdit" : {
+    "failureReasons" : {
+
+    },
+    "focusAfterTargetAppCount" : 1,
+    "focusAtReceiptTargetAppCount" : 1,
+    "focusBeforeTargetAppCount" : 1,
+    "frontmostAfterTriggerTargetAppCount" : 1,
+    "name" : "textedit",
+    "productFrontmostAfterPasteCount" : 0,
+    "productFrontmostAtReceiptCount" : 0,
+    "productFrontmostBeforePasteCount" : 0,
+    "records" : [
+      {
+        "failureReasons" : [
+
+        ],
+        "flowStates" : [
+          "triggered",
+          "inserting",
+          "done"
+        ],
+        "frontmostBundleAfterTrigger" : "com.apple.TextEdit",
+        "hotKeyResponse" : {
+          "accessibilityTrusted" : true,
+          "clipboardRestored" : false,
+          "focusAfterPaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : "PushWrite 002E simulated transcription."
+          },
+          "focusAtReceipt" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "focusBeforePaste" : {
+            "app" : {
+              "bundleID" : "com.apple.TextEdit",
+              "name" : "TextEdit",
+              "pid" : 13627
+            },
+            "role" : "AXTextArea",
+            "value" : ""
+          },
+          "id" : "785FA6EB-2E8D-466C-BE2E-EACEE80E7D1E",
+          "insertRoute" : "pasteboardCommandV",
+          "insertSource" : "transcription",
+          "kind" : "insertTranscription",
+          "pasteDelayMs" : 120,
+          "productBundleID" : "ch.baumanncreative.pushwrite",
+          "productFrontmostAfterPaste" : false,
+          "productFrontmostAtReceipt" : false,
+          "productFrontmostBeforePaste" : false,
+          "productPID" : 86182,
+          "promptAccessibility" : false,
+          "restoreClipboard" : false,
+          "restoreDelayMs" : 350,
+          "settleDelayMs" : 150,
+          "status" : "succeeded",
+          "syntheticPastePosted" : true,
+          "textLength" : 39,
+          "timestamp" : "2026-04-06T18:06:18Z"
+        },
+        "iteration" : 1,
+        "success" : true,
+        "targetValue" : "PushWrite 002E simulated transcription."
+      }
+    ],
+    "runCount" : 1,
+    "successCount" : 1
+  },
+  "timestamp" : "2026-04-06T18:06:24Z"
+}

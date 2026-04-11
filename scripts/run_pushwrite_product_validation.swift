@@ -80,6 +80,11 @@ struct ProductResponse: Codable {
     let error: String?
 }
 
+struct SuccessCriteria: Codable {
+    let rule: String
+    let notes: [String]
+}
+
 struct PasteboardTypeSnapshot: Codable, Equatable {
     let type: String
     let dataBase64: String
@@ -107,6 +112,8 @@ struct ClipboardTestResult: Codable {
 struct ContextRunRecord: Codable {
     let iteration: Int
     let success: Bool
+    let productResponseSucceeded: Bool
+    let observedTargetValueMatches: Bool
     let targetValue: String
     let productResponse: ProductResponse
     let failureReasons: [String]
@@ -116,6 +123,9 @@ struct ContextSummary: Codable {
     let name: String
     let runCount: Int
     let successCount: Int
+    let strictSuccessRule: String
+    let productResponseSucceededCount: Int
+    let observedTargetValueMatchesCount: Int
     let failureReasons: [String: Int]
     let focusAtReceiptTargetAppCount: Int
     let focusBeforeTargetAppCount: Int
@@ -154,6 +164,7 @@ struct ValidationSummary: Codable {
     let productAppPath: String
     let productRuntimeDir: String
     let manualLaunchCommand: String
+    let successCriteria: SuccessCriteria
     let launchState: ProductState
     let blockedFlow: BlockedFlowSummary
     let preflight: PreflightSummary
@@ -262,6 +273,20 @@ func shellEscape(_ value: String) -> String {
     "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
 
+func strictObservedInsertionSuccessRule() -> String {
+    "Success requires observed target value == expected text and product response invariants to hold; product status=succeeded alone is insufficient."
+}
+
+func productValidationSuccessCriteria() -> SuccessCriteria {
+    SuccessCriteria(
+        rule: strictObservedInsertionSuccessRule(),
+        notes: [
+            "A run is only successful when the target context value actually matches the payload.",
+            "A product response with status=succeeded does not count as success when observed target content stays unchanged."
+        ]
+    )
+}
+
 @discardableResult
 func runProcess(_ executable: String, arguments: [String], currentDirectory: String? = nil) throws -> String {
     let process = Process()
@@ -317,6 +342,14 @@ func buildProduct(repoRoot: String, outputDir: String) throws -> URL {
     return URL(fileURLWithPath: appPath)
 }
 
+func stableProductAppPath(repoRoot: String) -> String {
+    "\(repoRoot)/build/pushwrite-product/PushWrite.app"
+}
+
+func candidateProductOutputDir(repoRoot: String) -> String {
+    "\(repoRoot)/build/pushwrite-product-candidate"
+}
+
 func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
     if let productAppPath = options.productAppPath {
         let url = URL(fileURLWithPath: productAppPath)
@@ -326,16 +359,18 @@ func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
         return url
     }
 
-    if options.skipBuild {
-        let defaultPath = "\(repoRoot)/build/pushwrite-product/PushWrite.app"
-        let url = URL(fileURLWithPath: defaultPath)
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw ValidationError.controlFailed("Missing product app at \(url.path)")
-        }
-        return url
+    let stableURL = URL(fileURLWithPath: stableProductAppPath(repoRoot: repoRoot))
+    if FileManager.default.fileExists(atPath: stableURL.path) {
+        return stableURL
     }
 
-    let outputDir = options.productOutputDir.isEmpty ? "\(repoRoot)/build/pushwrite-product" : options.productOutputDir
+    if options.skipBuild {
+        throw ValidationError.controlFailed(
+            "Missing stable product app at \(stableURL.path). Build a candidate bundle with scripts/build_pushwrite_product.sh, promote it explicitly, or pass --product-app-path to validate a non-stable bundle."
+        )
+    }
+
+    let outputDir = options.productOutputDir.isEmpty ? candidateProductOutputDir(repoRoot: repoRoot) : options.productOutputDir
     let existingBundleURL = URL(fileURLWithPath: "\(outputDir)/PushWrite.app")
     if FileManager.default.fileExists(atPath: existingBundleURL.path) {
         return existingBundleURL
@@ -344,12 +379,12 @@ func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
     return try buildProduct(repoRoot: repoRoot, outputDir: outputDir)
 }
 
-func launchCommand(productAppPath: String, runtimeDir: String) -> String {
+func launchCommand(repoRoot: String, productAppPath: String, runtimeDir: String) -> String {
     [
-        "open",
-        "-n",
+        shellEscape("\(repoRoot)/scripts/control_pushwrite_product.sh"),
+        "launch",
+        "--product-app",
         shellEscape(productAppPath),
-        "--args",
         "--runtime-dir",
         shellEscape(runtimeDir)
     ].joined(separator: " ")
@@ -365,13 +400,47 @@ func runControl(repoRoot: String, productAppPath: String, runtimeDir: String, ar
 }
 
 func launchProduct(repoRoot: String, productAppPath: String, runtimeDir: String) throws -> ProductState {
-    let output = try runControl(
-        repoRoot: repoRoot,
-        productAppPath: productAppPath,
-        runtimeDir: runtimeDir,
-        arguments: ["launch", "--timeout-ms", "15000"]
-    )
-    return try JSONDecoder().decode(ProductState.self, from: Data(output.utf8))
+    let appURL = URL(fileURLWithPath: productAppPath)
+    guard FileManager.default.fileExists(atPath: appURL.path) else {
+        throw ValidationError.controlFailed("Missing product app at \(appURL.path)")
+    }
+
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
+    configuration.createsNewApplicationInstance = true
+    configuration.arguments = ["--runtime-dir", runtimeDir]
+
+    _ = NSApplication.shared
+    let deadline = Date().addingTimeInterval(15)
+    var launchError: Error?
+    var launchCompleted = false
+    DispatchQueue.main.async {
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
+            launchError = error
+            launchCompleted = true
+            CFRunLoopStop(CFRunLoopGetMain())
+        }
+    }
+
+    while !launchCompleted, Date() < deadline {
+        RunLoop.main.run(mode: .default, before: min(deadline, Date().addingTimeInterval(0.1)))
+    }
+
+    if let launchError {
+        throw ValidationError.controlFailed("PushWrite launch failed: \(launchError)")
+    }
+    if !launchCompleted {
+        throw ValidationError.timeout("launch completion did not return within 15 seconds")
+    }
+
+    try waitUntil(timeoutSeconds: 15) {
+        guard let state = try? readLaunchState(runtimeDir: runtimeDir) else {
+            return false
+        }
+        return state.running
+    }
+
+    return try readLaunchState(runtimeDir: runtimeDir)
 }
 
 func readLaunchState(runtimeDir: String) throws -> ProductState {
@@ -488,7 +557,7 @@ func clearAndWriteRichClipboardProbe() throws {
 
 func ensureTextEditReady() throws {
     let script = """
-    tell application id "com.apple.TextEdit"
+    tell application "TextEdit"
       activate
       if not (exists document 1) then
         make new document
@@ -506,7 +575,7 @@ func ensureTextEditReady() throws {
 
 func readTextEditValue() throws -> String {
     let script = """
-    tell application id "com.apple.TextEdit"
+    tell application "TextEdit"
       if not (exists document 1) then
         return ""
       end if
@@ -542,7 +611,7 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
 
     let fixtureURLString = escapeAppleScriptString(fixtureURL.absoluteString)
     let script = """
-    tell application id "com.apple.Safari"
+    tell application "Safari"
       activate
       if (count of windows) is 0 then
         make new document
@@ -554,7 +623,7 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
 
     try waitUntil(timeoutSeconds: 20) {
         let currentURL = try readAppleScriptString("""
-        tell application id "com.apple.Safari"
+        tell application "Safari"
           return URL of current tab of front window
         end tell
         """)
@@ -565,7 +634,7 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
 
 func readSafariTextareaValue() throws -> String {
     let currentURL = try readAppleScriptString("""
-    tell application id "com.apple.Safari"
+    tell application "Safari"
       return URL of current tab of front window
     end tell
     """)
@@ -579,7 +648,7 @@ func readSafariTextareaValue() throws -> String {
 
 func safariActiveElementID() throws -> String {
     try readAppleScriptString("""
-    tell application id "com.apple.Safari"
+    tell application "Safari"
       return name of current tab of front window
     end tell
     """)
@@ -596,7 +665,7 @@ func validateAutomationReadiness() -> (textEdit: Bool, safari: Bool, notes: [Str
     let textEditReady: Bool
     do {
         _ = try readAppleScriptString("""
-        tell application id "com.apple.TextEdit"
+        tell application "TextEdit"
           return "ok"
         end tell
         """)
@@ -609,7 +678,7 @@ func validateAutomationReadiness() -> (textEdit: Bool, safari: Bool, notes: [Str
     let safariReady: Bool
     do {
         _ = try readAppleScriptString("""
-        tell application id "com.apple.Safari"
+        tell application "Safari"
           return "ok"
         end tell
         """)
@@ -633,8 +702,29 @@ func runContextSeries(
     readValue: () throws -> String,
     verifyTargetIsReady: (() throws -> Bool)? = nil
 ) throws -> ContextSummary {
+    guard runCount > 0 else {
+        return ContextSummary(
+            name: name,
+            runCount: 0,
+            successCount: 0,
+            strictSuccessRule: strictObservedInsertionSuccessRule(),
+            productResponseSucceededCount: 0,
+            observedTargetValueMatchesCount: 0,
+            failureReasons: [:],
+            focusAtReceiptTargetAppCount: 0,
+            focusBeforeTargetAppCount: 0,
+            focusAfterTargetAppCount: 0,
+            productFrontmostAtReceiptCount: 0,
+            productFrontmostBeforePasteCount: 0,
+            productFrontmostAfterPasteCount: 0,
+            records: []
+        )
+    }
+
     var records: [ContextRunRecord] = []
     var failureReasons: [String: Int] = [:]
+    var productResponseSucceededCount = 0
+    var observedTargetValueMatchesCount = 0
     var focusAtReceiptTargetAppCount = 0
     var focusBeforeTargetAppCount = 0
     var focusAfterTargetAppCount = 0
@@ -662,12 +752,18 @@ func runContextSeries(
 
         Thread.sleep(forTimeInterval: 0.25)
         let targetValue = try readValue()
+        let observedTargetValueMatches = targetValue == payload
+        let productResponseSucceeded = productResponse.status == "succeeded"
 
-        if targetValue != payload {
+        if observedTargetValueMatches {
+            observedTargetValueMatchesCount += 1
+        } else {
             reasons.append("target-value-mismatch")
         }
 
-        if productResponse.status != "succeeded" {
+        if productResponseSucceeded {
+            productResponseSucceededCount += 1
+        } else {
             reasons.append("product-status-\(productResponse.status)")
         }
 
@@ -733,6 +829,8 @@ func runContextSeries(
             ContextRunRecord(
                 iteration: iteration,
                 success: success,
+                productResponseSucceeded: productResponseSucceeded,
+                observedTargetValueMatches: observedTargetValueMatches,
                 targetValue: targetValue,
                 productResponse: productResponse,
                 failureReasons: reasons
@@ -745,6 +843,9 @@ func runContextSeries(
         name: name,
         runCount: runCount,
         successCount: successCount,
+        strictSuccessRule: strictObservedInsertionSuccessRule(),
+        productResponseSucceededCount: productResponseSucceededCount,
+        observedTargetValueMatchesCount: observedTargetValueMatchesCount,
         failureReasons: failureReasons,
         focusAtReceiptTargetAppCount: focusAtReceiptTargetAppCount,
         focusBeforeTargetAppCount: focusBeforeTargetAppCount,
@@ -841,7 +942,7 @@ do {
 }
 
 if options.productOutputDir.isEmpty {
-    options.productOutputDir = "\(repoRoot)/build/pushwrite-product"
+    options.productOutputDir = candidateProductOutputDir(repoRoot: repoRoot)
 }
 if options.productRuntimeDir.isEmpty {
     options.productRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime"
@@ -953,12 +1054,13 @@ guard preflight.productAccessibilityTrusted else {
             payload: options.payload,
             productAppPath: productAppURL.path,
             productRuntimeDir: options.productRuntimeDir,
-            manualLaunchCommand: launchCommand(productAppPath: productAppURL.path, runtimeDir: options.productRuntimeDir),
+            manualLaunchCommand: launchCommand(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.productRuntimeDir),
+            successCriteria: productValidationSuccessCriteria(),
             launchState: launchState,
             blockedFlow: blockedFlow,
             preflight: preflight,
-            textEdit: ContextSummary(name: "textedit", runCount: 0, successCount: 0, failureReasons: [:], focusAtReceiptTargetAppCount: 0, focusBeforeTargetAppCount: 0, focusAfterTargetAppCount: 0, productFrontmostAtReceiptCount: 0, productFrontmostBeforePasteCount: 0, productFrontmostAfterPasteCount: 0, records: []),
-            safari: ContextSummary(name: "safari", runCount: 0, successCount: 0, failureReasons: [:], focusAtReceiptTargetAppCount: 0, focusBeforeTargetAppCount: 0, focusAfterTargetAppCount: 0, productFrontmostAtReceiptCount: 0, productFrontmostBeforePasteCount: 0, productFrontmostAfterPasteCount: 0, records: []),
+            textEdit: ContextSummary(name: "textedit", runCount: 0, successCount: 0, strictSuccessRule: strictObservedInsertionSuccessRule(), productResponseSucceededCount: 0, observedTargetValueMatchesCount: 0, failureReasons: [:], focusAtReceiptTargetAppCount: 0, focusBeforeTargetAppCount: 0, focusAfterTargetAppCount: 0, productFrontmostAtReceiptCount: 0, productFrontmostBeforePasteCount: 0, productFrontmostAfterPasteCount: 0, records: []),
+            safari: ContextSummary(name: "safari", runCount: 0, successCount: 0, strictSuccessRule: strictObservedInsertionSuccessRule(), productResponseSucceededCount: 0, observedTargetValueMatchesCount: 0, failureReasons: [:], focusAtReceiptTargetAppCount: 0, focusBeforeTargetAppCount: 0, focusAfterTargetAppCount: 0, productFrontmostAtReceiptCount: 0, productFrontmostBeforePasteCount: 0, productFrontmostAfterPasteCount: 0, records: []),
             clipboardRestore: [],
             eventsLogFile: "\(options.productRuntimeDir)/logs/events.jsonl"
         )
@@ -1052,7 +1154,8 @@ let summary = ValidationSummary(
     payload: options.payload,
     productAppPath: productAppURL.path,
     productRuntimeDir: options.productRuntimeDir,
-    manualLaunchCommand: launchCommand(productAppPath: productAppURL.path, runtimeDir: options.productRuntimeDir),
+    manualLaunchCommand: launchCommand(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.productRuntimeDir),
+    successCriteria: productValidationSuccessCriteria(),
     launchState: launchState,
     blockedFlow: blockedFlow,
     preflight: preflight,
@@ -1073,6 +1176,7 @@ if let resultsFile = options.resultsFile {
 
 func printContextSummary(_ summary: ContextSummary) {
     print("[002D] context=\(summary.name) success=\(summary.successCount)/\(summary.runCount)")
+    print("[002D] context=\(summary.name) productStatusSucceeded=\(summary.productResponseSucceededCount)/\(summary.runCount) observedTargetMatch=\(summary.observedTargetValueMatchesCount)/\(summary.runCount)")
     print("[002D] context=\(summary.name) focusReceiptTarget=\(summary.focusAtReceiptTargetAppCount) focusBeforeTarget=\(summary.focusBeforeTargetAppCount) focusAfterTarget=\(summary.focusAfterTargetAppCount)")
     print("[002D] context=\(summary.name) productFrontmostReceipt=\(summary.productFrontmostAtReceiptCount) productFrontmostBefore=\(summary.productFrontmostBeforePasteCount) productFrontmostAfter=\(summary.productFrontmostAfterPasteCount)")
     if !summary.failureReasons.isEmpty {
@@ -1083,6 +1187,7 @@ func printContextSummary(_ summary: ContextSummary) {
 
 print("[002D] productAppPath=\(summary.productAppPath)")
 print("[002D] runtimeDir=\(summary.productRuntimeDir)")
+print("[002D] successRule=\(summary.successCriteria.rule)")
 print("[002D] blockedPreflight accessibilityTrusted=\(summary.blockedFlow.preflightWithoutPrompt.accessibilityTrusted) blockedReason=\(summary.blockedFlow.preflightWithoutPrompt.blockedReason ?? "none")")
 if let promptResponse = summary.blockedFlow.preflightAfterPrompt {
     print("[002D] promptedPreflight accessibilityTrusted=\(promptResponse.accessibilityTrusted) blockedReason=\(promptResponse.blockedReason ?? "none")")
