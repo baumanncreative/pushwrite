@@ -56,6 +56,24 @@ struct ProductRequest: Codable {
     let restoreDelayMs: UInt32?
 }
 
+struct HotKeyStateSnapshot: Codable {
+    let descriptor: String
+    let keyCode: UInt32
+    let carbonModifiers: UInt32
+    let registered: Bool
+    let registrationError: String?
+}
+
+struct ProductFlowSnapshot: Codable {
+    let id: String?
+    let state: String
+    let trigger: String?
+    let timestamp: String
+    let textLength: Int
+    let blockedReason: String?
+    let error: String?
+}
+
 struct ProductState: Codable {
     let timestamp: String
     let runtimeDir: String
@@ -70,6 +88,8 @@ struct ProductState: Codable {
     let lastRequestID: String?
     let lastResponseStatus: ProductResponseStatus?
     let lastBlockedReason: String?
+    let hotKey: HotKeyStateSnapshot?
+    let flow: ProductFlowSnapshot?
 }
 
 struct ProductResponse: Codable {
@@ -307,6 +327,28 @@ func readState(from runtimeDir: String) -> ProductState? {
         return nil
     }
 
+    if state.running, !isProcessAlive(pid: state.pid) {
+        let normalizedState = ProductState(
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            runtimeDir: state.runtimeDir,
+            appPath: state.appPath,
+            bundleID: state.bundleID,
+            pid: state.pid,
+            running: false,
+            accessibilityTrusted: state.accessibilityTrusted,
+            blockedReason: state.blockedReason,
+            queuedRequestCount: 0,
+            isProcessing: false,
+            lastRequestID: state.lastRequestID,
+            lastResponseStatus: state.lastResponseStatus,
+            lastBlockedReason: state.lastBlockedReason,
+            hotKey: state.hotKey,
+            flow: state.flow
+        )
+        try? writeJSON(normalizedState, to: path)
+        return normalizedState
+    }
+
     return state
 }
 
@@ -464,7 +506,9 @@ do {
                 isProcessing: false,
                 lastRequestID: nil,
                 lastResponseStatus: nil,
-                lastBlockedReason: nil
+                lastBlockedReason: nil,
+                hotKey: nil,
+                flow: nil
             )
             try printJSON(placeholder)
         }
@@ -479,6 +523,13 @@ do {
         try printJSON(response)
     case .stop:
         let response = try sendRequest(options: options, kind: .shutdown)
+        try waitUntil(timeoutMs: options.timeoutMs) {
+            guard let state = readState(from: options.runtimeDir) else {
+                return true
+            }
+            return !isProcessAlive(pid: state.pid)
+        }
+        _ = readState(from: options.runtimeDir)
         try printJSON(response)
     }
 } catch {

@@ -82,6 +82,18 @@
       const status = document.getElementById("status");
       let lastEvent = "initial";
 
+      function focusTarget() {
+        target.focus({ preventScroll: true });
+        const end = target.value.length;
+        target.setSelectionRange(end, end);
+      }
+
+      function scheduleFocusBootstrap() {
+        [0, 100, 300, 700, 1200].forEach((delay) => {
+          window.setTimeout(focusTarget, delay);
+        });
+      }
+
       function updateStatus() {
         const payload = {
           lastEvent,
@@ -104,8 +116,20 @@
         setTimeout(updateStatus, 0);
       });
 
+      target.addEventListener("blur", () => {
+        window.setTimeout(focusTarget, 0);
+      });
+
+      window.addEventListener("focus", () => {
+        scheduleFocusBootstrap();
+      });
+
+      window.addEventListener("pageshow", () => {
+        scheduleFocusBootstrap();
+      });
+
       window.addEventListener("load", () => {
-        target.focus();
+        scheduleFocusBootstrap();
         updateStatus();
       });
     </script>

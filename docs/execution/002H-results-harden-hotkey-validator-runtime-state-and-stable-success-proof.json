@@ -1,0 +1,110 @@
+{
+  "timestamp": "2026-04-11T15:32:23Z",
+  "taskId": "002H",
+  "stableBundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+  "codeChanges": [
+    "/Users/michel/Code/pushwrite/scripts/run_pushwrite_hotkey_validation.swift",
+    "/Users/michel/Code/pushwrite/scripts/control_pushwrite_product.swift",
+    "/Users/michel/Code/pushwrite/tests/integration/browser-textarea-fixture.html"
+  ],
+  "hotkeyValidatorHardening": {
+    "status": "hardened",
+    "rootCauses": [
+      "The validator emitted the global hotkey through System Events, which did not reliably create new stable-bundle responses on reruns.",
+      "The validator exited early on failure paths and could leave launched PushWrite.app instances running.",
+      "Safari fixture preparation could leave focus in browser chrome instead of the textarea target."
+    ],
+    "changes": [
+      "Switched hotkey emission to direct HID keyboard events.",
+      "Wrapped the validator entry point in main() so defer-based cleanup also runs on failure exits.",
+      "Hardened the Safari fixture focus path for textarea-targeted validation."
+    ],
+    "blockedRerunEvidence": {
+      "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002h-blocked-recheck",
+      "summaryFile": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002h-blocked-recheck/summary.json",
+      "responseId": "D09F27FD-C1A0-4489-9108-9D806BC3563B",
+      "flowStates": [
+        "triggered",
+        "inserting",
+        "blocked"
+      ],
+      "frontmostBundleAfterTrigger": "com.apple.TextEdit"
+    }
+  },
+  "runtimeStateHardening": {
+    "status": "hardened",
+    "changes": [
+      "control_pushwrite_product status now normalizes stale product-state.json files when the recorded PID is no longer alive.",
+      "control_pushwrite_product stop now waits for process termination and refreshes the normalized state."
+    ],
+    "evidence": [
+      {
+        "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002h-blocked-recheck",
+        "running": false,
+        "lastResponseStatus": "stopped"
+      },
+      {
+        "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002h-stable-success-rerun",
+        "running": false,
+        "lastResponseStatus": "stopped"
+      },
+      {
+        "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002h-safari-final",
+        "running": false,
+        "lastResponseStatus": "stopped"
+      }
+    ]
+  },
+  "stableSuccessProof": {
+    "strictRule": "Success requires observed target value == expected text and product response invariants to hold; product status=succeeded alone is insufficient.",
+    "textEdit": {
+      "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002h-stable-success-rerun",
+      "summaryFile": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002h-stable-success-rerun/summary.json",
+      "responseId": "D4E70F05-7157-48AF-8671-6ECECC861E1A",
+      "productStatus": "succeeded",
+      "observedTargetValueMatches": true,
+      "targetValue": "PushWrite 002H observed stable success.",
+      "flowStates": [
+        "triggered",
+        "inserting",
+        "done"
+      ]
+    },
+    "safari": {
+      "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002h-safari-final",
+      "summaryFile": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002h-safari-final/summary.json",
+      "responseId": "6761D0B6-EAFF-485A-B65F-61E1CD66236D",
+      "productStatus": "succeeded",
+      "observedTargetValueMatches": true,
+      "targetValue": "PushWrite 002H observed stable success.",
+      "flowStates": [
+        "triggered",
+        "inserting",
+        "done"
+      ]
+    }
+  },
+  "openRisks": [
+    "State normalization currently lives in the control path rather than inside the product runtime itself.",
+    "The Safari hardening proves the local textarea fixture path, not arbitrary web applications.",
+    "Microphone capture and whisper.cpp integration remain outside the validated scope."
+  ],
+  "mvpAssessment": {
+    "classification": "stable_enough_for_microphone_stage",
+    "rationale": [
+      "Stable hotkey reruns now create fresh responses again.",
+      "Stop/status leave coherent runtime artifacts.",
+      "Stable TextEdit and Safari runs both satisfy observedTargetValueMatches=true."
+    ]
+  },
+  "followUpTask": {
+    "id": "002I",
+    "title": "Cut microphone start/stop onto the hardened stable hotkey core",
+    "scope": [
+      "Integrate real microphone start on hotkey-down and stop on hotkey-up into the stable product flow.",
+      "Extend runtime state with explicit recording and transcribing states.",
+      "Document blocked/no-mic/no-permission paths with the same strict evidence style.",
+      "Keep whisper.cpp and model integration out of scope."
+    ]
+  }
+}

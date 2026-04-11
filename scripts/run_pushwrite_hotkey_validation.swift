@@ -1,6 +1,7 @@
 #!/usr/bin/env swift
 
 import AppKit
+import ApplicationServices
 import Foundation
 
 struct Options {
@@ -346,6 +347,14 @@ func readAppleScriptString(_ source: String) throws -> String {
     return result.stringValue ?? ""
 }
 
+func readAppleScriptIntList(_ source: String) throws -> [Int] {
+    let result = try runAppleScript(source)
+    guard result.numberOfItems > 0 else {
+        return []
+    }
+    return (1...result.numberOfItems).compactMap { result.atIndex($0)?.int32Value }.map(Int.init)
+}
+
 func waitUntil(timeoutSeconds: Double, pollIntervalSeconds: Double = 0.1, condition: () throws -> Bool) throws {
     let deadline = Date().addingTimeInterval(timeoutSeconds)
     while Date() < deadline {
@@ -460,7 +469,7 @@ func launchCommand(repoRoot: String, productAppPath: String, runtimeDir: String,
         shellEscape(runtimeDir)
     ]
     if let simulatedText, !simulatedText.isEmpty {
-        parts.append("--simulated-transcription-text")
+        parts.append("--simulated-text")
         parts.append(shellEscape(simulatedText))
     }
     if forceAccessibilityBlocked {
@@ -639,30 +648,80 @@ func openSafariFixture(fixtureURL: URL) throws {
     }
 }
 
+func click(at point: CGPoint) throws {
+    guard
+        let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
+        let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)
+    else {
+        throw ValidationError.controlFailed("Could not create synthetic mouse events for Safari fixture focus.")
+    }
+
+    mouseDown.post(tap: .cghidEventTap)
+    usleep(20_000)
+    mouseUp.post(tap: .cghidEventTap)
+}
+
+func focusSafariFixtureTextarea() throws {
+    let bounds = try readAppleScriptIntList("""
+    tell application "Safari"
+      return bounds of front window
+    end tell
+    """)
+
+    guard bounds.count == 4 else {
+        throw ValidationError.invalidState("Could not read Safari front-window bounds.")
+    }
+
+    let left = CGFloat(bounds[0])
+    let top = CGFloat(bounds[1])
+    let right = CGFloat(bounds[2])
+    let bottom = CGFloat(bounds[3])
+    let width = max(right - left, 1)
+    let height = max(bottom - top, 1)
+    let point = CGPoint(x: left + width * 0.5, y: top + height * 0.62)
+
+    try click(at: point)
+    Thread.sleep(forTimeInterval: 0.35)
+}
+
 func ensureSafariFixtureReady(fixtureURL: URL) throws {
     try openSafariFixture(fixtureURL: fixtureURL)
-    Thread.sleep(forTimeInterval: 1.0)
+    Thread.sleep(forTimeInterval: 0.5)
 
-    let fixtureURLString = escapeAppleScriptString(fixtureURL.absoluteString)
-    let script = """
-    tell application "Safari"
-      activate
-      if (count of windows) is 0 then
-        make new document
-      end if
-      set URL of current tab of front window to "\(fixtureURLString)"
-    end tell
-    """
-    _ = try runAppleScript(script)
-
-    try waitUntil(timeoutSeconds: 20) {
-        let currentURL = try readAppleScriptString("""
+    func currentSafariURL() throws -> String {
+        try readAppleScriptString("""
         tell application "Safari"
           return URL of current tab of front window
         end tell
         """)
-        return currentURL == fixtureURL.absoluteString
     }
+
+    let fixtureURLString = escapeAppleScriptString(fixtureURL.absoluteString)
+    do {
+        try waitUntil(timeoutSeconds: 10) {
+            try currentSafariURL() == fixtureURL.absoluteString
+        }
+    } catch {
+        let script = """
+        tell application "Safari"
+          activate
+          if (count of windows) is 0 then
+            make new document
+          end if
+          set URL of current tab of front window to "\(fixtureURLString)"
+        end tell
+        """
+        _ = try runAppleScript(script)
+
+        try waitUntil(timeoutSeconds: 20) {
+            try currentSafariURL() == fixtureURL.absoluteString
+        }
+    }
+
+    try waitUntil(timeoutSeconds: 10) {
+        try safariFixtureReady()
+    }
+    try focusSafariFixtureTextarea()
     Thread.sleep(forTimeInterval: 0.5)
 }
 
@@ -690,11 +749,24 @@ func safariFixtureReady() throws -> Bool {
 }
 
 func triggerGlobalHotKey() throws {
-    _ = try runAppleScript("""
-    tell application "System Events"
-      key code 35 using {control down, option down, command down}
-    end tell
-    """)
+    guard let source = CGEventSource(stateID: .combinedSessionState) else {
+        throw ValidationError.controlFailed("Could not create a CGEventSource for hotkey validation.")
+    }
+
+    let hotKeyFlags: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand]
+    guard
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 35, keyDown: true),
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 35, keyDown: false)
+    else {
+        throw ValidationError.controlFailed("Could not create synthetic hotkey events for validation.")
+    }
+
+    keyDown.flags = hotKeyFlags
+    keyUp.flags = hotKeyFlags
+
+    keyDown.post(tap: .cghidEventTap)
+    usleep(20_000)
+    keyUp.post(tap: .cghidEventTap)
 }
 
 func readLastHotKeyResponse(runtimeDir: String) throws -> ProductResponse? {
@@ -971,88 +1043,214 @@ func runBlockedHotKeyValidation(
     )
 }
 
-let repoRoot = FileManager.default.currentDirectoryPath
-var options: Options
-do {
-    options = try parseOptions(arguments: Array(CommandLine.arguments.dropFirst()))
-} catch {
-    fputs("\(error)\n", stderr)
-    exit(64)
-}
-
-if options.productOutputDir.isEmpty {
-    options.productOutputDir = candidateProductOutputDir(repoRoot: repoRoot)
-}
-if options.successRuntimeDir.isEmpty {
-    options.successRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-hotkey-success"
-}
-if options.blockedRuntimeDir.isEmpty {
-    options.blockedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-hotkey-blocked"
-}
-
-let productAppURL: URL
-do {
-    productAppURL = try resolveProductApp(repoRoot: repoRoot, options: options)
-} catch {
-    fputs("\(error)\n", stderr)
-    exit(1)
-}
-
-let fixtureURL = URL(fileURLWithPath: "\(repoRoot)/tests/integration/browser-textarea-fixture.html")
-
-let successLaunchState: ProductState
-do {
-    if options.skipLaunch {
-        successLaunchState = try readLaunchState(runtimeDir: options.successRuntimeDir)
-    } else {
-        try? FileManager.default.removeItem(atPath: options.successRuntimeDir)
-        successLaunchState = try launchProduct(
-            repoRoot: repoRoot,
-            productAppPath: productAppURL.path,
-            runtimeDir: options.successRuntimeDir,
-            simulatedText: options.simulatedText,
-            forceAccessibilityBlocked: false,
-            forceAccessibilityTrusted: false
-        )
-    }
-} catch {
-    fputs("Product launch failed: \(error)\n", stderr)
-    exit(1)
-}
-
-defer {
-    stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.successRuntimeDir)
-}
-
-let preflight = HotKeyPreflightSummary(
-    accessibilityTrusted: successLaunchState.accessibilityTrusted,
-    blockedReason: successLaunchState.blockedReason,
-    hotKeyDescriptor: successLaunchState.hotKey.descriptor,
-    hotKeyRegistered: successLaunchState.hotKey.registered,
-    hotKeyRegistrationError: successLaunchState.hotKey.registrationError,
-    launchFlowState: successLaunchState.flow.state,
-    launchFlowTrigger: successLaunchState.flow.trigger,
-    forceAccessibilityTrusted: false,
-    notes: successLaunchState.accessibilityTrusted
-        ? []
-        : ["Accessibility is not trusted for the selected product bundle. Success-path validation was skipped; blocked-path observation ran against the real bundle/runtime instead."]
-)
-
-guard preflight.hotKeyRegistered else {
-    fputs("Global hotkey did not register: \(preflight.hotKeyRegistrationError ?? "unknown error")\n", stderr)
-    exit(1)
-}
-
-if !preflight.accessibilityTrusted {
-    let blockedSummary: BlockedHotKeySummary
+func main() -> Int32 {
+    let repoRoot = FileManager.default.currentDirectoryPath
+    var options: Options
     do {
-        blockedSummary = try runBlockedHotKeyValidation(
-            launchState: successLaunchState,
-            runtimeDir: options.successRuntimeDir
+        options = try parseOptions(arguments: Array(CommandLine.arguments.dropFirst()))
+    } catch {
+        fputs("\(error)\n", stderr)
+        return 64
+    }
+
+    if options.productOutputDir.isEmpty {
+        options.productOutputDir = candidateProductOutputDir(repoRoot: repoRoot)
+    }
+    if options.successRuntimeDir.isEmpty {
+        options.successRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-hotkey-success"
+    }
+    if options.blockedRuntimeDir.isEmpty {
+        options.blockedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-hotkey-blocked"
+    }
+
+    let productAppURL: URL
+    do {
+        productAppURL = try resolveProductApp(repoRoot: repoRoot, options: options)
+    } catch {
+        fputs("\(error)\n", stderr)
+        return 1
+    }
+
+    let fixtureURL = URL(fileURLWithPath: "\(repoRoot)/tests/integration/browser-textarea-fixture.html")
+
+    let successLaunchState: ProductState
+    do {
+        if options.skipLaunch {
+            successLaunchState = try readLaunchState(runtimeDir: options.successRuntimeDir)
+        } else {
+            try? FileManager.default.removeItem(atPath: options.successRuntimeDir)
+            successLaunchState = try launchProduct(
+                repoRoot: repoRoot,
+                productAppPath: productAppURL.path,
+                runtimeDir: options.successRuntimeDir,
+                simulatedText: options.simulatedText,
+                forceAccessibilityBlocked: false,
+                forceAccessibilityTrusted: false
+            )
+        }
+    } catch {
+        fputs("Product launch failed: \(error)\n", stderr)
+        return 1
+    }
+
+    defer {
+        stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.successRuntimeDir)
+    }
+
+    let preflight = HotKeyPreflightSummary(
+        accessibilityTrusted: successLaunchState.accessibilityTrusted,
+        blockedReason: successLaunchState.blockedReason,
+        hotKeyDescriptor: successLaunchState.hotKey.descriptor,
+        hotKeyRegistered: successLaunchState.hotKey.registered,
+        hotKeyRegistrationError: successLaunchState.hotKey.registrationError,
+        launchFlowState: successLaunchState.flow.state,
+        launchFlowTrigger: successLaunchState.flow.trigger,
+        forceAccessibilityTrusted: false,
+        notes: successLaunchState.accessibilityTrusted
+            ? []
+            : ["Accessibility is not trusted for the selected product bundle. Success-path validation was skipped; blocked-path observation ran against the real bundle/runtime instead."]
+    )
+
+    guard preflight.hotKeyRegistered else {
+        fputs("Global hotkey did not register: \(preflight.hotKeyRegistrationError ?? "unknown error")\n", stderr)
+        return 1
+    }
+
+    if !preflight.accessibilityTrusted {
+        let blockedSummary: BlockedHotKeySummary
+        do {
+            blockedSummary = try runBlockedHotKeyValidation(
+                launchState: successLaunchState,
+                runtimeDir: options.successRuntimeDir
+            )
+        } catch {
+            fputs("Blocked hotkey observation failed: \(error)\n", stderr)
+            return 1
+        }
+
+        let summary = ValidationSummary(
+            timestamp: isoTimestamp(),
+            simulatedText: options.simulatedText,
+            productAppPath: productAppURL.path,
+            successRuntimeDir: options.successRuntimeDir,
+            blockedRuntimeDir: options.successRuntimeDir,
+            manualLaunchCommand: launchCommand(
+                repoRoot: repoRoot,
+                productAppPath: productAppURL.path,
+                runtimeDir: options.successRuntimeDir,
+                simulatedText: options.simulatedText
+            ),
+            successCriteria: hotKeySuccessCriteria(),
+            preflight: preflight,
+            textEdit: emptyContextSummary(name: "textedit"),
+            safari: emptyContextSummary(name: "safari"),
+            blocked: blockedSummary,
+            successFlowEventsLogFile: "",
+            blockedFlowEventsLogFile: "\(options.successRuntimeDir)/logs/flow-events.jsonl",
+            lastHotKeyResponseFile: "\(options.successRuntimeDir)/logs/last-hotkey-response.json"
+        )
+
+        if let resultsFile = options.resultsFile {
+            do {
+                try writeSummary(summary, to: resultsFile)
+            } catch {
+                fputs("Could not write results file: \(error)\n", stderr)
+                return 1
+            }
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do {
+            let data = try encoder.encode(summary)
+            if let string = String(data: data, encoding: .utf8) {
+                print(string)
+            }
+        } catch {
+            fputs("Could not encode summary: \(error)\n", stderr)
+            return 1
+        }
+
+        fputs("Accessibility is not trusted for the selected product bundle.\n", stderr)
+        return 1
+    }
+
+    let textEditSummary: ContextSummary
+    do {
+        textEditSummary = try runHotKeySeries(
+            name: "textedit",
+            runCount: options.textEditRuns,
+            expectedText: options.simulatedText,
+            runtimeDir: options.successRuntimeDir,
+            prepare: {
+                try ensureTextEditReady()
+            },
+            readValue: {
+                try readTextEditValue()
+            }
         )
     } catch {
-        fputs("Blocked hotkey observation failed: \(error)\n", stderr)
-        exit(1)
+        fputs("TextEdit hotkey series failed: \(error)\n", stderr)
+        return 1
+    }
+
+    let safariSummary: ContextSummary
+    do {
+        safariSummary = try runHotKeySeries(
+            name: "safari",
+            runCount: options.safariRuns,
+            expectedText: options.simulatedText,
+            runtimeDir: options.successRuntimeDir,
+            prepare: {
+                try ensureSafariFixtureReady(fixtureURL: fixtureURL)
+            },
+            readValue: {
+                try readSafariTextareaValue()
+            },
+            verifyTargetIsReady: {
+                try safariFixtureReady()
+            }
+        )
+    } catch {
+        fputs("Safari hotkey series failed: \(error)\n", stderr)
+        return 1
+    }
+
+    stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.successRuntimeDir)
+
+    let blockedSummary: BlockedHotKeySummary?
+    if options.skipBlockedValidation {
+        blockedSummary = nil
+    } else {
+        let blockedLaunchState: ProductState
+        do {
+            try? FileManager.default.removeItem(atPath: options.blockedRuntimeDir)
+            blockedLaunchState = try launchProduct(
+                repoRoot: repoRoot,
+                productAppPath: productAppURL.path,
+                runtimeDir: options.blockedRuntimeDir,
+                simulatedText: options.simulatedText,
+                forceAccessibilityBlocked: true,
+                forceAccessibilityTrusted: false
+            )
+        } catch {
+            fputs("Blocked runtime launch failed: \(error)\n", stderr)
+            return 1
+        }
+
+        defer {
+            stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.blockedRuntimeDir)
+        }
+
+        do {
+            blockedSummary = try runBlockedHotKeyValidation(
+                launchState: blockedLaunchState,
+                runtimeDir: options.blockedRuntimeDir
+            )
+        } catch {
+            fputs("Blocked hotkey validation failed: \(error)\n", stderr)
+            return 1
+        }
     }
 
     let summary = ValidationSummary(
@@ -1060,7 +1258,7 @@ if !preflight.accessibilityTrusted {
         simulatedText: options.simulatedText,
         productAppPath: productAppURL.path,
         successRuntimeDir: options.successRuntimeDir,
-        blockedRuntimeDir: options.successRuntimeDir,
+        blockedRuntimeDir: options.blockedRuntimeDir,
         manualLaunchCommand: launchCommand(
             repoRoot: repoRoot,
             productAppPath: productAppURL.path,
@@ -1069,11 +1267,11 @@ if !preflight.accessibilityTrusted {
         ),
         successCriteria: hotKeySuccessCriteria(),
         preflight: preflight,
-        textEdit: emptyContextSummary(name: "textedit"),
-        safari: emptyContextSummary(name: "safari"),
+        textEdit: textEditSummary,
+        safari: safariSummary,
         blocked: blockedSummary,
-        successFlowEventsLogFile: "",
-        blockedFlowEventsLogFile: "\(options.successRuntimeDir)/logs/flow-events.jsonl",
+        successFlowEventsLogFile: "\(options.successRuntimeDir)/logs/flow-events.jsonl",
+        blockedFlowEventsLogFile: options.skipBlockedValidation ? "" : "\(options.blockedRuntimeDir)/logs/flow-events.jsonl",
         lastHotKeyResponseFile: "\(options.successRuntimeDir)/logs/last-hotkey-response.json"
     )
 
@@ -1082,7 +1280,7 @@ if !preflight.accessibilityTrusted {
             try writeSummary(summary, to: resultsFile)
         } catch {
             fputs("Could not write results file: \(error)\n", stderr)
-            exit(1)
+            return 1
         }
     }
 
@@ -1095,130 +1293,10 @@ if !preflight.accessibilityTrusted {
         }
     } catch {
         fputs("Could not encode summary: \(error)\n", stderr)
-        exit(1)
+        return 1
     }
 
-    fputs("Accessibility is not trusted for the selected product bundle.\n", stderr)
-    exit(1)
+    return 0
 }
 
-let textEditSummary: ContextSummary
-do {
-    textEditSummary = try runHotKeySeries(
-        name: "textedit",
-        runCount: options.textEditRuns,
-        expectedText: options.simulatedText,
-        runtimeDir: options.successRuntimeDir,
-        prepare: {
-            try ensureTextEditReady()
-        },
-        readValue: {
-            try readTextEditValue()
-        }
-    )
-} catch {
-    fputs("TextEdit hotkey series failed: \(error)\n", stderr)
-    exit(1)
-}
-
-let safariSummary: ContextSummary
-do {
-    safariSummary = try runHotKeySeries(
-        name: "safari",
-        runCount: options.safariRuns,
-        expectedText: options.simulatedText,
-        runtimeDir: options.successRuntimeDir,
-        prepare: {
-            try ensureSafariFixtureReady(fixtureURL: fixtureURL)
-        },
-        readValue: {
-            try readSafariTextareaValue()
-        },
-        verifyTargetIsReady: {
-            try safariFixtureReady()
-        }
-    )
-} catch {
-    fputs("Safari hotkey series failed: \(error)\n", stderr)
-    exit(1)
-}
-
-stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.successRuntimeDir)
-
-let blockedSummary: BlockedHotKeySummary?
-if options.skipBlockedValidation {
-    blockedSummary = nil
-} else {
-    let blockedLaunchState: ProductState
-    do {
-        try? FileManager.default.removeItem(atPath: options.blockedRuntimeDir)
-        blockedLaunchState = try launchProduct(
-            repoRoot: repoRoot,
-            productAppPath: productAppURL.path,
-            runtimeDir: options.blockedRuntimeDir,
-            simulatedText: options.simulatedText,
-            forceAccessibilityBlocked: true,
-            forceAccessibilityTrusted: false
-        )
-    } catch {
-        fputs("Blocked runtime launch failed: \(error)\n", stderr)
-        exit(1)
-    }
-
-    defer {
-        stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.blockedRuntimeDir)
-    }
-
-    do {
-        blockedSummary = try runBlockedHotKeyValidation(
-            launchState: blockedLaunchState,
-            runtimeDir: options.blockedRuntimeDir
-        )
-    } catch {
-        fputs("Blocked hotkey validation failed: \(error)\n", stderr)
-        exit(1)
-    }
-}
-
-let summary = ValidationSummary(
-    timestamp: isoTimestamp(),
-    simulatedText: options.simulatedText,
-    productAppPath: productAppURL.path,
-    successRuntimeDir: options.successRuntimeDir,
-    blockedRuntimeDir: options.blockedRuntimeDir,
-    manualLaunchCommand: launchCommand(
-        repoRoot: repoRoot,
-        productAppPath: productAppURL.path,
-        runtimeDir: options.successRuntimeDir,
-        simulatedText: options.simulatedText
-    ),
-    successCriteria: hotKeySuccessCriteria(),
-    preflight: preflight,
-    textEdit: textEditSummary,
-    safari: safariSummary,
-    blocked: blockedSummary,
-    successFlowEventsLogFile: "\(options.successRuntimeDir)/logs/flow-events.jsonl",
-    blockedFlowEventsLogFile: options.skipBlockedValidation ? "" : "\(options.blockedRuntimeDir)/logs/flow-events.jsonl",
-    lastHotKeyResponseFile: "\(options.successRuntimeDir)/logs/last-hotkey-response.json"
-)
-
-if let resultsFile = options.resultsFile {
-    do {
-        try writeSummary(summary, to: resultsFile)
-    } catch {
-        fputs("Could not write results file: \(error)\n", stderr)
-        exit(1)
-    }
-}
-
-let encoder = JSONEncoder()
-encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-do {
-    let data = try encoder.encode(summary)
-    if let string = String(data: data, encoding: .utf8) {
-        print(string)
-    }
-} catch {
-    fputs("Could not encode summary: \(error)\n", stderr)
-    exit(1)
-}
+exit(main())
