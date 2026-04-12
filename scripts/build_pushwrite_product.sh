@@ -29,6 +29,7 @@ swiftc \
   -sdk "$SDK_PATH" \
   -framework AppKit \
   -framework ApplicationServices \
+  -framework AVFoundation \
   -framework Carbon \
   "$SOURCE_DIR/main.swift" \
   -o "$MACOS_DIR/PushWrite"

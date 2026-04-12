@@ -8,6 +8,7 @@ enum ProductRequestKind: String, Codable {
     case preflight
     case insert
     case insertTranscription
+    case recordAudio
     case shutdown
 }
 
@@ -39,10 +40,23 @@ struct Options {
     let promptAccessibility: Bool
     let forceAccessibilityBlocked: Bool
     let forceAccessibilityTrusted: Bool
+    let forceMicrophoneDenied: Bool
+    let forceNoMicrophoneDevice: Bool
     let settleDelayMs: UInt32?
     let pasteDelayMs: UInt32?
     let restoreDelayMs: UInt32?
     let timeoutMs: Int
+}
+
+enum MicrophonePermissionStatus: String, Codable {
+    case notDetermined
+    case granted
+    case denied
+    case restricted
+}
+
+enum HotKeyInteractionModel: String, Codable {
+    case pressAndHold
 }
 
 struct ProductRequest: Codable {
@@ -72,6 +86,20 @@ struct ProductFlowSnapshot: Codable {
     let textLength: Int
     let blockedReason: String?
     let error: String?
+    let recordingDurationMs: Int?
+    let recordingFilePath: String?
+}
+
+struct RecordingArtifact: Codable {
+    let id: String
+    let filePath: String
+    let metadataPath: String
+    let format: String
+    let sampleRateHz: Double
+    let channelCount: Int
+    let durationMs: Int
+    let fileSizeBytes: UInt64
+    let createdAt: String
 }
 
 struct ProductState: Codable {
@@ -88,6 +116,11 @@ struct ProductState: Codable {
     let lastRequestID: String?
     let lastResponseStatus: ProductResponseStatus?
     let lastBlockedReason: String?
+    let lastError: String?
+    let microphonePermissionStatus: MicrophonePermissionStatus
+    let hotKeyInteractionModel: HotKeyInteractionModel
+    let activeRecordingID: String?
+    let lastRecording: RecordingArtifact?
     let hotKey: HotKeyStateSnapshot?
     let flow: ProductFlowSnapshot?
 }
@@ -100,6 +133,8 @@ struct ProductResponse: Codable {
     let productPID: Int32
     let status: ProductResponseStatus
     let accessibilityTrusted: Bool
+    let microphonePermissionStatus: MicrophonePermissionStatus
+    let requestedMicrophonePermission: Bool
     let promptAccessibility: Bool
     let blockedReason: String?
     let settleDelayMs: UInt32
@@ -107,17 +142,23 @@ struct ProductResponse: Codable {
     let restoreClipboard: Bool
     let restoreDelayMs: UInt32
     let textLength: Int
+    let hotKeyInteractionModel: HotKeyInteractionModel?
     let insertRoute: String?
     let insertSource: String?
     let focusAtReceipt: FocusSnapshot?
     let focusBeforePaste: FocusSnapshot?
     let focusAfterPaste: FocusSnapshot?
+    let focusAtStop: FocusSnapshot?
     let productFrontmostAtReceipt: Bool
     let productFrontmostBeforePaste: Bool
     let productFrontmostAfterPaste: Bool
     let originalPasteboard: PasteboardMetadata?
     let syntheticPastePosted: Bool
     let clipboardRestored: Bool
+    let recordingStartedAt: String?
+    let recordingStoppedAt: String?
+    let recordingArtifact: RecordingArtifact?
+    let transcribingPlaceholder: Bool
     let error: String?
 }
 
@@ -200,6 +241,8 @@ func parseOptions(arguments: [String]) throws -> Options {
     var promptAccessibility = false
     var forceAccessibilityBlocked = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_BLOCKED"] == "1"
     var forceAccessibilityTrusted = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_TRUSTED"] == "1"
+    var forceMicrophoneDenied = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_DENIED"] == "1"
+    var forceNoMicrophoneDevice = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_NO_MICROPHONE_DEVICE"] == "1"
     var settleDelayMs: UInt32?
     var pasteDelayMs: UInt32?
     var restoreDelayMs: UInt32?
@@ -250,6 +293,10 @@ func parseOptions(arguments: [String]) throws -> Options {
             forceAccessibilityBlocked = true
         case "--force-accessibility-trusted":
             forceAccessibilityTrusted = true
+        case "--force-microphone-denied":
+            forceMicrophoneDenied = true
+        case "--force-no-microphone-device":
+            forceNoMicrophoneDevice = true
         case "--settle-delay-ms":
             settleDelayMs = try requireUInt32(for: argument)
         case "--paste-delay-ms":
@@ -285,6 +332,8 @@ func parseOptions(arguments: [String]) throws -> Options {
         promptAccessibility: promptAccessibility,
         forceAccessibilityBlocked: forceAccessibilityBlocked,
         forceAccessibilityTrusted: forceAccessibilityTrusted,
+        forceMicrophoneDenied: forceMicrophoneDenied,
+        forceNoMicrophoneDevice: forceNoMicrophoneDevice,
         settleDelayMs: settleDelayMs,
         pasteDelayMs: pasteDelayMs,
         restoreDelayMs: restoreDelayMs,
@@ -342,6 +391,11 @@ func readState(from runtimeDir: String) -> ProductState? {
             lastRequestID: state.lastRequestID,
             lastResponseStatus: state.lastResponseStatus,
             lastBlockedReason: state.lastBlockedReason,
+            lastError: state.lastError,
+            microphonePermissionStatus: state.microphonePermissionStatus,
+            hotKeyInteractionModel: state.hotKeyInteractionModel,
+            activeRecordingID: nil,
+            lastRecording: state.lastRecording,
             hotKey: state.hotKey,
             flow: state.flow
         )
@@ -387,10 +441,13 @@ func launchProduct(options: Options) throws -> ProductState {
     guard FileManager.default.fileExists(atPath: appURL.path) else {
         throw ControlError.productNotRunning("Missing PushWrite app at \(appURL.path). Build it first.")
     }
-
-    let configuration = NSWorkspace.OpenConfiguration()
-    configuration.activates = false
-    configuration.createsNewApplicationInstance = true
+    let executableURL = appURL
+        .appendingPathComponent("Contents", isDirectory: true)
+        .appendingPathComponent("MacOS", isDirectory: true)
+        .appendingPathComponent("PushWrite", isDirectory: false)
+    guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
+        throw ControlError.productNotRunning("Missing PushWrite executable at \(executableURL.path).")
+    }
 
     var arguments = ["--runtime-dir", options.runtimeDir]
     if let simulatedText = options.simulatedText, !simulatedText.isEmpty {
@@ -402,30 +459,19 @@ func launchProduct(options: Options) throws -> ProductState {
     if options.forceAccessibilityTrusted {
         arguments.append("--force-accessibility-trusted")
     }
-    configuration.arguments = arguments
-
-    _ = NSApplication.shared
-    let deadline = Date().addingTimeInterval(Double(max(1, options.timeoutMs)) / 1_000.0)
-    var launchError: Error?
-    var launchCompleted = false
-    DispatchQueue.main.async {
-        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
-            launchError = error
-            launchCompleted = true
-            CFRunLoopStop(CFRunLoopGetMain())
-        }
+    if options.forceMicrophoneDenied {
+        arguments.append("--force-microphone-denied")
+    }
+    if options.forceNoMicrophoneDevice {
+        arguments.append("--force-no-microphone-device")
     }
 
-    while !launchCompleted, Date() < deadline {
-        RunLoop.main.run(mode: .default, before: min(deadline, Date().addingTimeInterval(0.1)))
-    }
-
-    if let launchError {
-        throw ControlError.productNotRunning("PushWrite launch failed: \(launchError)")
-    }
-    if !launchCompleted {
-        throw ControlError.timeout("launch completion did not return within \(options.timeoutMs)ms")
-    }
+    let process = Process()
+    process.executableURL = executableURL
+    process.arguments = arguments
+    process.standardOutput = Pipe()
+    process.standardError = Pipe()
+    try process.run()
 
     try waitUntil(timeoutMs: options.timeoutMs) {
         guard let state = readState(from: options.runtimeDir) else {
@@ -507,6 +553,11 @@ do {
                 lastRequestID: nil,
                 lastResponseStatus: nil,
                 lastBlockedReason: nil,
+                lastError: nil,
+                microphonePermissionStatus: .notDetermined,
+                hotKeyInteractionModel: .pressAndHold,
+                activeRecordingID: nil,
+                lastRecording: nil,
                 hotKey: nil,
                 flow: nil
             )

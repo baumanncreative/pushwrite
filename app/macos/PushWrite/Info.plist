@@ -20,6 +20,8 @@
   <string>1</string>
   <key>LSUIElement</key>
   <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>PushWrite needs microphone access to record speech from the global push-to-talk hotkey.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>

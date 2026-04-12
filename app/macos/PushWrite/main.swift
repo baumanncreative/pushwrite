@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import AVFoundation
 import Carbon
 import Foundation
 
@@ -7,6 +8,7 @@ enum ProductRequestKind: String, Codable {
     case preflight
     case insert
     case insertTranscription
+    case recordAudio
     case shutdown
 }
 
@@ -32,6 +34,8 @@ enum ProductFlowState: String, Codable {
     case idle
     case triggered
     case blocked
+    case recording
+    case transcribing
     case inserting
     case done
     case error
@@ -41,14 +45,29 @@ enum FlowTriggerSource: String, Codable {
     case globalHotKey
 }
 
+enum MicrophonePermissionStatus: String, Codable {
+    case notDetermined
+    case granted
+    case denied
+    case restricted
+}
+
+enum HotKeyInteractionModel: String, Codable {
+    case pressAndHold
+}
+
 var runtimeAccessibilityBlockedOverride = false
 var runtimeAccessibilityTrustedOverride = false
+var runtimeMicrophoneDeniedOverride = false
+var runtimeNoMicrophoneDeviceOverride = false
 
 struct LaunchOptions {
     let runtimeDir: String
     let simulatedTranscriptionText: String
     let forceAccessibilityBlocked: Bool
     let forceAccessibilityTrusted: Bool
+    let forceMicrophoneDenied: Bool
+    let forceNoMicrophoneDevice: Bool
 }
 
 struct GlobalHotKeyConfiguration {
@@ -116,6 +135,8 @@ struct ProductFlowSnapshot: Codable {
     let textLength: Int
     let blockedReason: String?
     let error: String?
+    let recordingDurationMs: Int?
+    let recordingFilePath: String?
 }
 
 struct ProductFlowEvent: Codable {
@@ -126,6 +147,20 @@ struct ProductFlowEvent: Codable {
     let textLength: Int
     let blockedReason: String?
     let error: String?
+    let recordingDurationMs: Int?
+    let recordingFilePath: String?
+}
+
+struct RecordingArtifact: Codable {
+    let id: String
+    let filePath: String
+    let metadataPath: String
+    let format: String
+    let sampleRateHz: Double
+    let channelCount: Int
+    let durationMs: Int
+    let fileSizeBytes: UInt64
+    let createdAt: String
 }
 
 struct ProductRequest: Codable {
@@ -147,6 +182,8 @@ struct ProductResponse: Codable {
     let productPID: Int32
     let status: ProductResponseStatus
     let accessibilityTrusted: Bool
+    let microphonePermissionStatus: MicrophonePermissionStatus
+    let requestedMicrophonePermission: Bool
     let promptAccessibility: Bool
     let blockedReason: String?
     let settleDelayMs: UInt32
@@ -154,17 +191,23 @@ struct ProductResponse: Codable {
     let restoreClipboard: Bool
     let restoreDelayMs: UInt32
     let textLength: Int
+    let hotKeyInteractionModel: HotKeyInteractionModel?
     let insertRoute: InsertRoute?
     let insertSource: InsertSource?
     let focusAtReceipt: FocusSnapshot?
     let focusBeforePaste: FocusSnapshot?
     let focusAfterPaste: FocusSnapshot?
+    let focusAtStop: FocusSnapshot?
     let productFrontmostAtReceipt: Bool
     let productFrontmostBeforePaste: Bool
     let productFrontmostAfterPaste: Bool
     let originalPasteboard: PasteboardMetadata?
     let syntheticPastePosted: Bool
     let clipboardRestored: Bool
+    let recordingStartedAt: String?
+    let recordingStoppedAt: String?
+    let recordingArtifact: RecordingArtifact?
+    let transcribingPlaceholder: Bool
     let error: String?
 }
 
@@ -182,6 +225,11 @@ struct ProductState: Codable {
     let lastRequestID: String?
     let lastResponseStatus: ProductResponseStatus?
     let lastBlockedReason: String?
+    let lastError: String?
+    let microphonePermissionStatus: MicrophonePermissionStatus
+    let hotKeyInteractionModel: HotKeyInteractionModel
+    let activeRecordingID: String?
+    let lastRecording: RecordingArtifact?
     let hotKey: HotKeyStateSnapshot
     let flow: ProductFlowSnapshot
 }
@@ -191,6 +239,7 @@ struct ProductPaths {
     let requestsDir: String
     let responsesDir: String
     let logsDir: String
+    let recordingsDir: String
     let stateFile: String
     let eventsLogFile: String
     let flowEventsLogFile: String
@@ -202,6 +251,7 @@ struct ProductPaths {
         self.requestsDir = "\(runtimeDir)/requests"
         self.responsesDir = "\(runtimeDir)/responses"
         self.logsDir = "\(runtimeDir)/logs"
+        self.recordingsDir = "\(runtimeDir)/recordings"
         self.stateFile = "\(runtimeDir)/product-state.json"
         self.eventsLogFile = "\(runtimeDir)/logs/events.jsonl"
         self.flowEventsLogFile = "\(runtimeDir)/logs/flow-events.jsonl"
@@ -216,6 +266,14 @@ struct ProductPaths {
     func responseFile(for id: String) -> String {
         "\(responsesDir)/\(id).json"
     }
+
+    func recordingAudioFile(for id: String) -> String {
+        "\(recordingsDir)/\(id).wav"
+    }
+
+    func recordingMetadataFile(for id: String) -> String {
+        "\(recordingsDir)/\(id).json"
+    }
 }
 
 enum ProductRuntimeError: Error, CustomStringConvertible {
@@ -224,6 +282,9 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
     case invalidRequestFile(String)
     case invalidRequest(String)
     case accessibilityDenied
+    case noMicrophoneDevice
+    case microphoneRecorderCreationFailed(String)
+    case microphoneRecordingStartFailed
     case eventSourceUnavailable
     case eventCreationFailed
 
@@ -239,6 +300,12 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
             return message
         case .accessibilityDenied:
             return "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V."
+        case .noMicrophoneDevice:
+            return "No audio input device is available for PushWrite recording."
+        case let .microphoneRecorderCreationFailed(message):
+            return "PushWrite could not create a microphone recorder: \(message)"
+        case .microphoneRecordingStartFailed:
+            return "PushWrite could not start microphone recording."
         case .eventSourceUnavailable:
             return "Could not create a CGEventSource for keyboard events."
         case .eventCreationFailed:
@@ -247,11 +314,44 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
     }
 }
 
+final class ActiveRecordingSession {
+    let flowID: String
+    let fileURL: URL
+    let metadataURL: URL
+    let startedAt: Date
+    let startedAtTimestamp: String
+    let focusAtStart: FocusSnapshot?
+    let recorder: AVAudioRecorder
+    let requestedMicrophonePermission: Bool
+
+    init(
+        flowID: String,
+        fileURL: URL,
+        metadataURL: URL,
+        startedAt: Date,
+        startedAtTimestamp: String,
+        focusAtStart: FocusSnapshot?,
+        recorder: AVAudioRecorder,
+        requestedMicrophonePermission: Bool
+    ) {
+        self.flowID = flowID
+        self.fileURL = fileURL
+        self.metadataURL = metadataURL
+        self.startedAt = startedAt
+        self.startedAtTimestamp = startedAtTimestamp
+        self.focusAtStart = focusAtStart
+        self.recorder = recorder
+        self.requestedMicrophonePermission = requestedMicrophonePermission
+    }
+}
+
 func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
     var runtimeDir = ProcessInfo.processInfo.environment["PUSHWRITE_PRODUCT_RUNTIME_DIR"] ?? ""
     var simulatedTranscriptionText = defaultSimulatedTranscriptionText()
     var forceAccessibilityBlocked = accessibilityBlockedOverrideEnabled()
     var forceAccessibilityTrusted = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_TRUSTED"] == "1"
+    var forceMicrophoneDenied = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_DENIED"] == "1"
+    var forceNoMicrophoneDevice = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_NO_MICROPHONE_DEVICE"] == "1"
     var index = 0
 
     func requireValue(for flag: String) throws -> String {
@@ -274,6 +374,10 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
             forceAccessibilityBlocked = true
         case "--force-accessibility-trusted":
             forceAccessibilityTrusted = true
+        case "--force-microphone-denied":
+            forceMicrophoneDenied = true
+        case "--force-no-microphone-device":
+            forceNoMicrophoneDevice = true
         default:
             throw ProductRuntimeError.unknownArgument(argument)
         }
@@ -288,7 +392,9 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
         runtimeDir: runtimeDir,
         simulatedTranscriptionText: simulatedTranscriptionText,
         forceAccessibilityBlocked: forceAccessibilityBlocked,
-        forceAccessibilityTrusted: forceAccessibilityTrusted
+        forceAccessibilityTrusted: forceAccessibilityTrusted,
+        forceMicrophoneDenied: forceMicrophoneDenied,
+        forceNoMicrophoneDevice: forceNoMicrophoneDevice
     )
 }
 
@@ -317,6 +423,76 @@ func defaultSimulatedTranscriptionText() -> String {
 
 func hotKeyRegistrationErrorMessage(status: OSStatus) -> String {
     "Global hotkey registration failed with OSStatus \(status)."
+}
+
+func microphoneDeniedReason() -> String {
+    "Microphone access is required before PushWrite can start recording."
+}
+
+func microphoneRestrictedReason() -> String {
+    "Microphone access is restricted and PushWrite cannot start recording."
+}
+
+func currentMicrophonePermissionStatus() -> MicrophonePermissionStatus {
+    if runtimeMicrophoneDeniedOverride || ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_DENIED"] == "1" {
+        return .denied
+    }
+
+    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    case .authorized:
+        return .granted
+    case .denied:
+        return .denied
+    case .restricted:
+        return .restricted
+    case .notDetermined:
+        return .notDetermined
+    @unknown default:
+        return .restricted
+    }
+}
+
+func microphoneBlockedReason(for status: MicrophonePermissionStatus) -> String? {
+    switch status {
+    case .denied:
+        return microphoneDeniedReason()
+    case .restricted:
+        return microphoneRestrictedReason()
+    case .granted, .notDetermined:
+        return nil
+    }
+}
+
+func hasAvailableMicrophoneDevice() -> Bool {
+    if runtimeNoMicrophoneDeviceOverride || ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_NO_MICROPHONE_DEVICE"] == "1" {
+        return false
+    }
+    let discoverySession = AVCaptureDevice.DiscoverySession(
+        deviceTypes: [.microphone, .external],
+        mediaType: .audio,
+        position: .unspecified
+    )
+    return !discoverySession.devices.isEmpty
+}
+
+func requestMicrophoneAccess(completion: @escaping (MicrophonePermissionStatus, Bool) -> Void) {
+    let currentStatus = currentMicrophonePermissionStatus()
+    guard currentStatus == .notDetermined else {
+        completion(currentStatus, false)
+        return
+    }
+
+    AVCaptureDevice.requestAccess(for: .audio) { granted in
+        let resolvedStatus: MicrophonePermissionStatus
+        if runtimeMicrophoneDeniedOverride {
+            resolvedStatus = .denied
+        } else if granted {
+            resolvedStatus = .granted
+        } else {
+            resolvedStatus = currentMicrophonePermissionStatus()
+        }
+        completion(resolvedStatus, true)
+    }
 }
 
 func currentFrontmostApp() -> NSRunningApplication? {
@@ -608,6 +784,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private var lastRequestID: String?
     private var lastResponseStatus: ProductResponseStatus?
     private var lastBlockedReason: String?
+    private var lastError: String?
+    private var lastRecording: RecordingArtifact?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyEventHandler: EventHandlerRef?
     private var hotKeyState: HotKeyStateSnapshot
@@ -615,6 +793,10 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private var pollTimer: Timer?
     private var blockedWindowController: AccessibilityBlockedWindowController?
     private var launchBlockedUIHasBeenPresented = false
+    private var isHotKeyHeld = false
+    private var isAwaitingMicrophonePermission = false
+    private var pendingStopAfterRecordingStart = false
+    private var activeRecordingSession: ActiveRecordingSession?
 
     init(launchOptions: LaunchOptions) {
         let hotKeyConfiguration = GlobalHotKeyConfiguration.default
@@ -634,7 +816,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             timestamp: isoTimestamp(),
             textLength: 0,
             blockedReason: nil,
-            error: nil
+            error: nil,
+            recordingDurationMs: nil,
+            recordingFilePath: nil
         )
     }
 
@@ -666,15 +850,25 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         pollTimer?.invalidate()
         unregisterGlobalHotKey()
+        if let activeRecordingSession {
+            activeRecordingSession.recorder.stop()
+            self.activeRecordingSession = nil
+        }
         try? writeState(running: false)
     }
 
     private func registerGlobalHotKey() {
         let hotKeyUserData = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
+        var eventTypes = [
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyPressed)
+            ),
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyReleased)
+            )
+        ]
 
         let handlerStatus = InstallEventHandler(
             GetApplicationEventTarget(),
@@ -685,8 +879,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 let delegate = Unmanaged<PushWriteAppDelegate>.fromOpaque(userData).takeUnretainedValue()
                 return delegate.handleHotKeyEvent(event)
             },
-            1,
-            &eventType,
+            eventTypes.count,
+            &eventTypes,
             hotKeyUserData,
             &hotKeyEventHandler
         )
@@ -769,21 +963,28 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             return noErr
         }
 
-        handleGlobalHotKeyPressed()
+        switch GetEventKind(event) {
+        case UInt32(kEventHotKeyPressed):
+            handleGlobalHotKeyPressed()
+        case UInt32(kEventHotKeyReleased):
+            handleGlobalHotKeyReleased()
+        default:
+            break
+        }
         return noErr
     }
 
     private func handleGlobalHotKeyPressed() {
         let flowID = UUID().uuidString
-        let text = launchOptions.simulatedTranscriptionText
         let receiptObservation = captureReceiptObservation(promptAccessibility: false)
+        isHotKeyHeld = true
 
         guard hotKeyState.registered else {
             transitionFlow(
                 to: .error,
                 id: flowID,
                 trigger: .globalHotKey,
-                textLength: text.count,
+                textLength: 0,
                 error: hotKeyState.registrationError ?? "Global hotkey is not registered."
             )
             DispatchQueue.main.async {
@@ -797,8 +998,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 to: .blocked,
                 id: flowID,
                 trigger: .globalHotKey,
-                textLength: text.count,
-                blockedReason: "PushWrite is already processing another action."
+                textLength: 0,
+                blockedReason: busyBlockedReason()
             )
             DispatchQueue.main.async {
                 NSSound.beep()
@@ -808,17 +1009,43 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
         isProcessing = true
         activeHotKeyFlowID = flowID
-        transitionFlow(to: .triggered, id: flowID, trigger: .globalHotKey, textLength: text.count)
+        pendingStopAfterRecordingStart = false
+        transitionFlow(to: .triggered, id: flowID, trigger: .globalHotKey, textLength: 0)
 
-        workerQueue.async {
-            let response = self.performGlobalHotKeyFlow(
-                flowID: flowID,
-                text: text,
-                receiptObservation: receiptObservation
-            )
+        guard receiptObservation.accessibilityTrusted else {
             DispatchQueue.main.async {
-                self.completeGlobalHotKeyFlow(flowID: flowID, response: response)
+                NSSound.beep()
             }
+            completeGlobalHotKeyFlow(
+                flowID: flowID,
+                response: makeBlockedHotKeyResponse(
+                    flowID: flowID,
+                    receiptObservation: receiptObservation,
+                    microphonePermissionStatus: currentMicrophonePermissionStatus(),
+                    blockedReason: ProductRuntimeError.accessibilityDenied.description,
+                    requestedMicrophonePermission: false
+                )
+            )
+            return
+        }
+
+        startHotKeyRecordingAttempt(flowID: flowID, receiptObservation: receiptObservation)
+    }
+
+    private func handleGlobalHotKeyReleased() {
+        isHotKeyHeld = false
+
+        guard isProcessing, let flowID = activeHotKeyFlowID else {
+            return
+        }
+
+        if let activeRecordingSession, activeRecordingSession.flowID == flowID {
+            stopActiveRecordingSession(activeRecordingSession)
+            return
+        }
+
+        if isAwaitingMicrophonePermission {
+            pendingStopAfterRecordingStart = true
         }
     }
 
@@ -830,52 +1057,346 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func performGlobalHotKeyFlow(
+    private func busyBlockedReason() -> String {
+        if flowSnapshot.state == .transcribing {
+            return "PushWrite is still preparing the previous recording for transcription."
+        }
+        return "PushWrite is already processing another action."
+    }
+
+    private func startHotKeyRecordingAttempt(flowID: String, receiptObservation: ReceiptObservation) {
+        isAwaitingMicrophonePermission = true
+        requestMicrophoneAccess { [weak self] permissionStatus, requestedPermission in
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+
+                self.isAwaitingMicrophonePermission = false
+
+                guard self.activeHotKeyFlowID == flowID else {
+                    return
+                }
+
+                if let blockedReason = microphoneBlockedReason(for: permissionStatus) {
+                    NSSound.beep()
+                    self.completeGlobalHotKeyFlow(
+                        flowID: flowID,
+                        response: self.makeBlockedHotKeyResponse(
+                            flowID: flowID,
+                            receiptObservation: receiptObservation,
+                            microphonePermissionStatus: permissionStatus,
+                            blockedReason: blockedReason,
+                            requestedMicrophonePermission: requestedPermission
+                        )
+                    )
+                    return
+                }
+
+                do {
+                    let session = try self.startRecordingSession(
+                        flowID: flowID,
+                        receiptObservation: receiptObservation,
+                        requestedMicrophonePermission: requestedPermission
+                    )
+                    self.activeRecordingSession = session
+                    self.transitionFlow(
+                        to: .recording,
+                        id: flowID,
+                        trigger: .globalHotKey,
+                        textLength: 0,
+                        recordingDurationMs: 0,
+                        recordingFilePath: session.fileURL.path
+                    )
+
+                    if self.pendingStopAfterRecordingStart || !self.isHotKeyHeld {
+                        self.stopActiveRecordingSession(session)
+                    }
+                } catch {
+                    NSSound.beep()
+                    self.completeGlobalHotKeyFlow(
+                        flowID: flowID,
+                        response: self.makeFailedHotKeyResponse(
+                            flowID: flowID,
+                            receiptObservation: receiptObservation,
+                            microphonePermissionStatus: permissionStatus,
+                            requestedMicrophonePermission: requestedPermission,
+                            error: "\(error)"
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private func startRecordingSession(
         flowID: String,
-        text: String,
-        receiptObservation: ReceiptObservation
-    ) -> ProductResponse {
-        DispatchQueue.main.sync {
-            self.transitionFlow(to: .inserting, id: flowID, trigger: .globalHotKey, textLength: text.count)
+        receiptObservation: ReceiptObservation,
+        requestedMicrophonePermission: Bool
+    ) throws -> ActiveRecordingSession {
+        guard hasAvailableMicrophoneDevice() else {
+            throw ProductRuntimeError.noMicrophoneDevice
         }
 
+        let fileURL = URL(fileURLWithPath: paths.recordingAudioFile(for: flowID))
+        let metadataURL = URL(fileURLWithPath: paths.recordingMetadataFile(for: flowID))
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 16_000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false
+        ]
+
         do {
-            return try insertTranscription(
-                text: text,
-                requestID: flowID,
-                presentsBlockedUI: false,
-                receiptObservation: receiptObservation
+            let recorder = try AVAudioRecorder(url: fileURL, settings: settings)
+            recorder.prepareToRecord()
+
+            guard recorder.record() else {
+                throw ProductRuntimeError.microphoneRecordingStartFailed
+            }
+
+            let startedAt = Date()
+            return ActiveRecordingSession(
+                flowID: flowID,
+                fileURL: fileURL,
+                metadataURL: metadataURL,
+                startedAt: startedAt,
+                startedAtTimestamp: isoTimestamp(),
+                focusAtStart: receiptObservation.focusSnapshot,
+                recorder: recorder,
+                requestedMicrophonePermission: requestedMicrophonePermission
             )
+        } catch let error as ProductRuntimeError {
+            throw error
         } catch {
+            throw ProductRuntimeError.microphoneRecorderCreationFailed("\(error)")
+        }
+    }
+
+    private func stopActiveRecordingSession(_ session: ActiveRecordingSession) {
+        guard activeRecordingSession?.flowID == session.flowID else {
+            return
+        }
+
+        activeRecordingSession = nil
+        pendingStopAfterRecordingStart = false
+
+        let measuredDurationMs = max(Int((session.recorder.currentTime * 1_000.0).rounded()), 0)
+        let focusAtStop = captureFocusSnapshot(isTrusted: true)
+        session.recorder.stop()
+
+        transitionFlow(
+            to: .transcribing,
+            id: session.flowID,
+            trigger: .globalHotKey,
+            textLength: 0,
+            recordingDurationMs: measuredDurationMs,
+            recordingFilePath: session.fileURL.path
+        )
+
+        workerQueue.async {
+            let response = self.finishRecordingSession(
+                session,
+                measuredDurationMs: measuredDurationMs,
+                focusAtStop: focusAtStop
+            )
+            DispatchQueue.main.async {
+                self.completeGlobalHotKeyFlow(flowID: session.flowID, response: response)
+            }
+        }
+    }
+
+    private func finishRecordingSession(
+        _ session: ActiveRecordingSession,
+        measuredDurationMs: Int,
+        focusAtStop: FocusSnapshot?
+    ) -> ProductResponse {
+        do {
+            let artifact = try makeRecordingArtifact(session: session, measuredDurationMs: measuredDurationMs)
             return ProductResponse(
-                id: flowID,
-                kind: .insertTranscription,
+                id: session.flowID,
+                kind: .recordAudio,
                 timestamp: isoTimestamp(),
                 productBundleID: Bundle.main.bundleIdentifier,
                 productPID: ProcessInfo.processInfo.processIdentifier,
-                status: .failed,
-                accessibilityTrusted: receiptObservation.accessibilityTrusted,
+                status: .succeeded,
+                accessibilityTrusted: true,
+                microphonePermissionStatus: .granted,
+                requestedMicrophonePermission: session.requestedMicrophonePermission,
                 promptAccessibility: false,
                 blockedReason: nil,
                 settleDelayMs: defaults.settle,
                 pasteDelayMs: defaults.paste,
                 restoreClipboard: false,
                 restoreDelayMs: defaults.restore,
-                textLength: text.count,
-                insertRoute: .pasteboardCommandV,
-                insertSource: .transcription,
-                focusAtReceipt: receiptObservation.focusSnapshot,
+                textLength: 0,
+                hotKeyInteractionModel: .pressAndHold,
+                insertRoute: nil,
+                insertSource: nil,
+                focusAtReceipt: session.focusAtStart,
                 focusBeforePaste: nil,
                 focusAfterPaste: nil,
-                productFrontmostAtReceipt: isProductFrontmost(receiptObservation.focusSnapshot),
+                focusAtStop: focusAtStop,
+                productFrontmostAtReceipt: isProductFrontmost(session.focusAtStart),
                 productFrontmostBeforePaste: false,
                 productFrontmostAfterPaste: false,
                 originalPasteboard: nil,
                 syntheticPastePosted: false,
                 clipboardRestored: false,
+                recordingStartedAt: session.startedAtTimestamp,
+                recordingStoppedAt: isoTimestamp(),
+                recordingArtifact: artifact,
+                transcribingPlaceholder: true,
+                error: nil
+            )
+        } catch {
+            return ProductResponse(
+                id: session.flowID,
+                kind: .recordAudio,
+                timestamp: isoTimestamp(),
+                productBundleID: Bundle.main.bundleIdentifier,
+                productPID: ProcessInfo.processInfo.processIdentifier,
+                status: .failed,
+                accessibilityTrusted: true,
+                microphonePermissionStatus: .granted,
+                requestedMicrophonePermission: session.requestedMicrophonePermission,
+                promptAccessibility: false,
+                blockedReason: nil,
+                settleDelayMs: defaults.settle,
+                pasteDelayMs: defaults.paste,
+                restoreClipboard: false,
+                restoreDelayMs: defaults.restore,
+                textLength: 0,
+                hotKeyInteractionModel: .pressAndHold,
+                insertRoute: nil,
+                insertSource: nil,
+                focusAtReceipt: session.focusAtStart,
+                focusBeforePaste: nil,
+                focusAfterPaste: nil,
+                focusAtStop: focusAtStop,
+                productFrontmostAtReceipt: isProductFrontmost(session.focusAtStart),
+                productFrontmostBeforePaste: false,
+                productFrontmostAfterPaste: false,
+                originalPasteboard: nil,
+                syntheticPastePosted: false,
+                clipboardRestored: false,
+                recordingStartedAt: session.startedAtTimestamp,
+                recordingStoppedAt: isoTimestamp(),
+                recordingArtifact: nil,
+                transcribingPlaceholder: true,
                 error: "\(error)"
             )
         }
+    }
+
+    private func makeRecordingArtifact(session: ActiveRecordingSession, measuredDurationMs: Int) throws -> RecordingArtifact {
+        let attributes = try FileManager.default.attributesOfItem(atPath: session.fileURL.path)
+        let fileSizeBytes = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        let artifact = RecordingArtifact(
+            id: session.flowID,
+            filePath: session.fileURL.path,
+            metadataPath: session.metadataURL.path,
+            format: "wav-lpcm-16khz-mono",
+            sampleRateHz: 16_000,
+            channelCount: 1,
+            durationMs: measuredDurationMs,
+            fileSizeBytes: fileSizeBytes,
+            createdAt: session.startedAtTimestamp
+        )
+        try writeJSON(artifact, to: session.metadataURL.path)
+        return artifact
+    }
+
+    private func makeBlockedHotKeyResponse(
+        flowID: String,
+        receiptObservation: ReceiptObservation,
+        microphonePermissionStatus: MicrophonePermissionStatus,
+        blockedReason: String,
+        requestedMicrophonePermission: Bool
+    ) -> ProductResponse {
+        ProductResponse(
+            id: flowID,
+            kind: .recordAudio,
+            timestamp: isoTimestamp(),
+            productBundleID: Bundle.main.bundleIdentifier,
+            productPID: ProcessInfo.processInfo.processIdentifier,
+            status: .blocked,
+            accessibilityTrusted: receiptObservation.accessibilityTrusted,
+            microphonePermissionStatus: microphonePermissionStatus,
+            requestedMicrophonePermission: requestedMicrophonePermission,
+            promptAccessibility: false,
+            blockedReason: blockedReason,
+            settleDelayMs: defaults.settle,
+            pasteDelayMs: defaults.paste,
+            restoreClipboard: false,
+            restoreDelayMs: defaults.restore,
+            textLength: 0,
+            hotKeyInteractionModel: .pressAndHold,
+            insertRoute: nil,
+            insertSource: nil,
+            focusAtReceipt: receiptObservation.focusSnapshot,
+            focusBeforePaste: nil,
+            focusAfterPaste: nil,
+            focusAtStop: receiptObservation.focusSnapshot,
+            productFrontmostAtReceipt: isProductFrontmost(receiptObservation.focusSnapshot),
+            productFrontmostBeforePaste: false,
+            productFrontmostAfterPaste: false,
+            originalPasteboard: nil,
+            syntheticPastePosted: false,
+            clipboardRestored: false,
+            recordingStartedAt: nil,
+            recordingStoppedAt: nil,
+            recordingArtifact: nil,
+            transcribingPlaceholder: false,
+            error: nil
+        )
+    }
+
+    private func makeFailedHotKeyResponse(
+        flowID: String,
+        receiptObservation: ReceiptObservation,
+        microphonePermissionStatus: MicrophonePermissionStatus,
+        requestedMicrophonePermission: Bool,
+        error: String
+    ) -> ProductResponse {
+        ProductResponse(
+            id: flowID,
+            kind: .recordAudio,
+            timestamp: isoTimestamp(),
+            productBundleID: Bundle.main.bundleIdentifier,
+            productPID: ProcessInfo.processInfo.processIdentifier,
+            status: .failed,
+            accessibilityTrusted: receiptObservation.accessibilityTrusted,
+            microphonePermissionStatus: microphonePermissionStatus,
+            requestedMicrophonePermission: requestedMicrophonePermission,
+            promptAccessibility: false,
+            blockedReason: nil,
+            settleDelayMs: defaults.settle,
+            pasteDelayMs: defaults.paste,
+            restoreClipboard: false,
+            restoreDelayMs: defaults.restore,
+            textLength: 0,
+            hotKeyInteractionModel: .pressAndHold,
+            insertRoute: nil,
+            insertSource: nil,
+            focusAtReceipt: receiptObservation.focusSnapshot,
+            focusBeforePaste: nil,
+            focusAfterPaste: nil,
+            focusAtStop: receiptObservation.focusSnapshot,
+            productFrontmostAtReceipt: isProductFrontmost(receiptObservation.focusSnapshot),
+            productFrontmostBeforePaste: false,
+            productFrontmostAfterPaste: false,
+            originalPasteboard: nil,
+            syntheticPastePosted: false,
+            clipboardRestored: false,
+            recordingStartedAt: nil,
+            recordingStoppedAt: nil,
+            recordingArtifact: nil,
+            transcribingPlaceholder: false,
+            error: error
+        )
     }
 
     private func completeGlobalHotKeyFlow(flowID: String, response: ProductResponse) {
@@ -888,9 +1409,13 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
         activeHotKeyFlowID = nil
         isProcessing = false
+        isAwaitingMicrophonePermission = false
+        pendingStopAfterRecordingStart = false
         lastRequestID = response.id
         lastResponseStatus = response.status
         lastBlockedReason = response.blockedReason
+        lastError = response.error
+        lastRecording = response.recordingArtifact
 
         transitionFlow(
             to: terminalFlowState(for: response),
@@ -898,7 +1423,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             trigger: .globalHotKey,
             textLength: response.textLength,
             blockedReason: response.blockedReason,
-            error: response.error
+            error: response.error,
+            recordingDurationMs: response.recordingArtifact?.durationMs,
+            recordingFilePath: response.recordingArtifact?.filePath
         )
 
         processNextRequestIfNeeded()
@@ -923,7 +1450,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         trigger: FlowTriggerSource? = nil,
         textLength: Int = 0,
         blockedReason: String? = nil,
-        error: String? = nil
+        error: String? = nil,
+        recordingDurationMs: Int? = nil,
+        recordingFilePath: String? = nil
     ) {
         let snapshot = ProductFlowSnapshot(
             id: id,
@@ -932,7 +1461,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             timestamp: isoTimestamp(),
             textLength: textLength,
             blockedReason: blockedReason,
-            error: error
+            error: error,
+            recordingDurationMs: recordingDurationMs,
+            recordingFilePath: recordingFilePath
         )
         flowSnapshot = snapshot
 
@@ -944,7 +1475,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 timestamp: snapshot.timestamp,
                 textLength: textLength,
                 blockedReason: blockedReason,
-                error: error
+                error: error,
+                recordingDurationMs: recordingDurationMs,
+                recordingFilePath: recordingFilePath
             )
             try? appendJSONLine(event, to: paths.flowEventsLogFile)
         }
@@ -957,6 +1490,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         try ensureDirectory(paths.requestsDir)
         try ensureDirectory(paths.responsesDir)
         try ensureDirectory(paths.logsDir)
+        try ensureDirectory(paths.recordingsDir)
     }
 
     private func pollRequestsDirectory() {
@@ -1000,6 +1534,11 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             lastRequestID: lastRequestID,
             lastResponseStatus: lastResponseStatus,
             lastBlockedReason: lastBlockedReason,
+            lastError: lastError,
+            microphonePermissionStatus: currentMicrophonePermissionStatus(),
+            hotKeyInteractionModel: .pressAndHold,
+            activeRecordingID: activeRecordingSession?.flowID,
+            lastRecording: lastRecording,
             hotKey: hotKeyState,
             flow: flowSnapshot
         )
@@ -1035,6 +1574,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 return try performDirectInsert(request)
             case .insertTranscription:
                 return try insertTranscription(text: request.text, request: request)
+            case .recordAudio:
+                throw ProductRuntimeError.invalidRequest("recordAudio is reserved for the global hotkey flow.")
             case .shutdown:
                 return performShutdown(request)
             }
@@ -1047,6 +1588,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 productPID: ProcessInfo.processInfo.processIdentifier,
                 status: .invalidRequest,
                 accessibilityTrusted: isAccessibilityTrusted(prompt: false),
+                microphonePermissionStatus: currentMicrophonePermissionStatus(),
+                requestedMicrophonePermission: false,
                 promptAccessibility: false,
                 blockedReason: nil,
                 settleDelayMs: defaults.settle,
@@ -1054,17 +1597,23 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreClipboard: false,
                 restoreDelayMs: defaults.restore,
                 textLength: 0,
+                hotKeyInteractionModel: nil,
                 insertRoute: nil,
                 insertSource: nil,
                 focusAtReceipt: captureFocusSnapshot(isTrusted: false),
                 focusBeforePaste: nil,
                 focusAfterPaste: nil,
+                focusAtStop: nil,
                 productFrontmostAtReceipt: false,
                 productFrontmostBeforePaste: false,
                 productFrontmostAfterPaste: false,
                 originalPasteboard: nil,
                 syntheticPastePosted: false,
                 clipboardRestored: false,
+                recordingStartedAt: nil,
+                recordingStoppedAt: nil,
+                recordingArtifact: nil,
+                transcribingPlaceholder: false,
                 error: "\(error)"
             )
         }
@@ -1087,6 +1636,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             productPID: ProcessInfo.processInfo.processIdentifier,
             status: accessibilityTrusted ? .ready : .blocked,
             accessibilityTrusted: accessibilityTrusted,
+            microphonePermissionStatus: currentMicrophonePermissionStatus(),
+            requestedMicrophonePermission: false,
             promptAccessibility: request.promptAccessibility,
             blockedReason: blockedReason,
             settleDelayMs: request.settleDelayMs ?? defaults.settle,
@@ -1094,17 +1645,23 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreClipboard: request.restoreClipboard,
             restoreDelayMs: request.restoreDelayMs ?? defaults.restore,
             textLength: request.text?.count ?? 0,
+            hotKeyInteractionModel: .pressAndHold,
             insertRoute: nil,
             insertSource: nil,
             focusAtReceipt: focusAtReceipt,
             focusBeforePaste: focusAtReceipt,
             focusAfterPaste: focusAtReceipt,
+            focusAtStop: nil,
             productFrontmostAtReceipt: isProductFrontmost(focusAtReceipt),
             productFrontmostBeforePaste: isProductFrontmost(focusAtReceipt),
             productFrontmostAfterPaste: isProductFrontmost(focusAtReceipt),
             originalPasteboard: nil,
             syntheticPastePosted: false,
             clipboardRestored: false,
+            recordingStartedAt: nil,
+            recordingStoppedAt: nil,
+            recordingArtifact: nil,
+            transcribingPlaceholder: false,
             error: nil
         )
     }
@@ -1171,6 +1728,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 productPID: ProcessInfo.processInfo.processIdentifier,
                 status: .blocked,
                 accessibilityTrusted: false,
+                microphonePermissionStatus: currentMicrophonePermissionStatus(),
+                requestedMicrophonePermission: false,
                 promptAccessibility: request.promptAccessibility,
                 blockedReason: ProductRuntimeError.accessibilityDenied.description,
                 settleDelayMs: settleDelayMs,
@@ -1178,17 +1737,23 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreClipboard: request.restoreClipboard,
                 restoreDelayMs: restoreDelayMs,
                 textLength: text?.count ?? 0,
+                hotKeyInteractionModel: nil,
                 insertRoute: .pasteboardCommandV,
                 insertSource: source,
                 focusAtReceipt: focusAtReceipt,
                 focusBeforePaste: focusAtReceipt,
                 focusAfterPaste: focusAtReceipt,
+                focusAtStop: nil,
                 productFrontmostAtReceipt: isProductFrontmost(focusAtReceipt),
                 productFrontmostBeforePaste: isProductFrontmost(focusAtReceipt),
                 productFrontmostAfterPaste: isProductFrontmost(focusAtReceipt),
                 originalPasteboard: nil,
                 syntheticPastePosted: false,
                 clipboardRestored: false,
+                recordingStartedAt: nil,
+                recordingStoppedAt: nil,
+                recordingArtifact: nil,
+                transcribingPlaceholder: false,
                 error: nil
             )
         }
@@ -1219,6 +1784,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 productPID: ProcessInfo.processInfo.processIdentifier,
                 status: .failed,
                 accessibilityTrusted: true,
+                microphonePermissionStatus: currentMicrophonePermissionStatus(),
+                requestedMicrophonePermission: false,
                 promptAccessibility: request.promptAccessibility,
                 blockedReason: nil,
                 settleDelayMs: settleDelayMs,
@@ -1226,17 +1793,23 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreClipboard: request.restoreClipboard,
                 restoreDelayMs: restoreDelayMs,
                 textLength: text.count,
+                hotKeyInteractionModel: nil,
                 insertRoute: .pasteboardCommandV,
                 insertSource: source,
                 focusAtReceipt: focusAtReceipt,
                 focusBeforePaste: focusBeforePaste,
                 focusAfterPaste: focusAfterFailure,
+                focusAtStop: nil,
                 productFrontmostAtReceipt: isProductFrontmost(focusAtReceipt),
                 productFrontmostBeforePaste: isProductFrontmost(focusBeforePaste),
                 productFrontmostAfterPaste: isProductFrontmost(focusAfterFailure),
                 originalPasteboard: originalPasteboardMetadata,
                 syntheticPastePosted: false,
                 clipboardRestored: false,
+                recordingStartedAt: nil,
+                recordingStoppedAt: nil,
+                recordingArtifact: nil,
+                transcribingPlaceholder: false,
                 error: "\(error)"
             )
         }
@@ -1256,6 +1829,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             productPID: ProcessInfo.processInfo.processIdentifier,
             status: .succeeded,
             accessibilityTrusted: true,
+            microphonePermissionStatus: currentMicrophonePermissionStatus(),
+            requestedMicrophonePermission: false,
             promptAccessibility: request.promptAccessibility,
             blockedReason: nil,
             settleDelayMs: settleDelayMs,
@@ -1263,17 +1838,23 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreClipboard: request.restoreClipboard,
             restoreDelayMs: restoreDelayMs,
             textLength: text.count,
+            hotKeyInteractionModel: nil,
             insertRoute: .pasteboardCommandV,
             insertSource: source,
             focusAtReceipt: focusAtReceipt,
             focusBeforePaste: focusBeforePaste,
             focusAfterPaste: focusAfterPaste,
+            focusAtStop: nil,
             productFrontmostAtReceipt: isProductFrontmost(focusAtReceipt),
             productFrontmostBeforePaste: isProductFrontmost(focusBeforePaste),
             productFrontmostAfterPaste: isProductFrontmost(focusAfterPaste),
             originalPasteboard: originalPasteboardMetadata,
             syntheticPastePosted: true,
             clipboardRestored: originalPasteboardSnapshot != nil,
+            recordingStartedAt: nil,
+            recordingStoppedAt: nil,
+            recordingArtifact: nil,
+            transcribingPlaceholder: false,
             error: nil
         )
     }
@@ -1290,6 +1871,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             productPID: ProcessInfo.processInfo.processIdentifier,
             status: .stopped,
             accessibilityTrusted: accessibilityTrusted,
+            microphonePermissionStatus: currentMicrophonePermissionStatus(),
+            requestedMicrophonePermission: false,
             promptAccessibility: request.promptAccessibility,
             blockedReason: nil,
             settleDelayMs: request.settleDelayMs ?? defaults.settle,
@@ -1297,17 +1880,23 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreClipboard: request.restoreClipboard,
             restoreDelayMs: request.restoreDelayMs ?? defaults.restore,
             textLength: 0,
+            hotKeyInteractionModel: nil,
             insertRoute: nil,
             insertSource: nil,
             focusAtReceipt: focus,
             focusBeforePaste: focus,
             focusAfterPaste: focus,
+            focusAtStop: focus,
             productFrontmostAtReceipt: isProductFrontmost(focus),
             productFrontmostBeforePaste: isProductFrontmost(focus),
             productFrontmostAfterPaste: isProductFrontmost(focus),
             originalPasteboard: nil,
             syntheticPastePosted: false,
             clipboardRestored: false,
+            recordingStartedAt: nil,
+            recordingStoppedAt: nil,
+            recordingArtifact: nil,
+            transcribingPlaceholder: false,
             error: nil
         )
     }
@@ -1333,6 +1922,10 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         lastRequestID = response.id
         lastResponseStatus = response.status
         lastBlockedReason = response.blockedReason
+        lastError = response.error
+        if let recordingArtifact = response.recordingArtifact {
+            lastRecording = recordingArtifact
+        }
 
         if response.kind == .shutdown {
             try? writeState(running: false)
@@ -1410,6 +2003,8 @@ do {
 
 runtimeAccessibilityBlockedOverride = launchOptions.forceAccessibilityBlocked
 runtimeAccessibilityTrustedOverride = launchOptions.forceAccessibilityTrusted
+runtimeMicrophoneDeniedOverride = launchOptions.forceMicrophoneDenied
+runtimeNoMicrophoneDeviceOverride = launchOptions.forceNoMicrophoneDevice
 
 let app = NSApplication.shared
 let delegate = PushWriteAppDelegate(launchOptions: launchOptions)
