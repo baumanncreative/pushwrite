@@ -137,6 +137,7 @@ struct ProductFlowSnapshot: Codable {
     let trigger: FlowTriggerSource?
     let timestamp: String
     let textLength: Int
+    let transcriptionInsertGate: TranscriptionInsertGate?
     let blockedReason: String?
     let error: String?
     let recordingDurationMs: Int?
@@ -149,6 +150,7 @@ struct ProductFlowEvent: Codable {
     let trigger: FlowTriggerSource
     let timestamp: String
     let textLength: Int
+    let transcriptionInsertGate: TranscriptionInsertGate?
     let blockedReason: String?
     let error: String?
     let recordingDurationMs: Int?
@@ -170,6 +172,12 @@ struct RecordingArtifact: Codable {
 enum TranscriptionStatus: String, Codable {
     case succeeded
     case failed
+}
+
+enum TranscriptionInsertGate: String, Codable {
+    case passed
+    case empty
+    case tooShort
 }
 
 struct TranscriptionArtifact: Codable {
@@ -220,6 +228,7 @@ struct ProductResponse: Codable {
     let restoreClipboard: Bool
     let restoreDelayMs: UInt32
     let textLength: Int
+    let transcriptionInsertGate: TranscriptionInsertGate?
     let hotKeyInteractionModel: HotKeyInteractionModel?
     let insertRoute: InsertRoute?
     let insertSource: InsertSource?
@@ -254,6 +263,7 @@ struct ProductState: Codable {
     let isProcessing: Bool
     let lastRequestID: String?
     let lastResponseStatus: ProductResponseStatus?
+    let lastTranscriptionInsertGate: TranscriptionInsertGate?
     let lastBlockedReason: String?
     let lastError: String?
     let microphonePermissionStatus: MicrophonePermissionStatus
@@ -568,6 +578,16 @@ func optionalNonEmptyTrimmed(_ value: String?) -> String? {
     }
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? nil : trimmed
+}
+
+func transcriptionInsertGate(for text: String) -> TranscriptionInsertGate {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        return .empty
+    }
+
+    let meaningfulCharacterCount = trimmed.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.count
+    return meaningfulCharacterCount < 2 ? .tooShort : .passed
 }
 
 func inspectRecordingArtifact(at fileURL: URL) throws -> RecordingFileDetails {
@@ -964,6 +984,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private var isProcessing = false
     private var lastRequestID: String?
     private var lastResponseStatus: ProductResponseStatus?
+    private var lastTranscriptionInsertGate: TranscriptionInsertGate?
     private var lastBlockedReason: String?
     private var lastError: String?
     private var lastRecording: RecordingArtifact?
@@ -997,6 +1018,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             trigger: nil,
             timestamp: isoTimestamp(),
             textLength: 0,
+            transcriptionInsertGate: nil,
             blockedReason: nil,
             error: nil,
             recordingDurationMs: nil,
@@ -1402,43 +1424,84 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             try replaceRecordingArtifactWithFixtureIfNeeded(session: session)
             let artifact = try makeRecordingArtifact(session: session, measuredDurationMs: measuredDurationMs)
             let transcriptionArtifact = transcribeRecording(session: session, recordingArtifact: artifact)
-            let transcriptionFailed = transcriptionArtifact.status == .failed
-            return ProductResponse(
-                id: session.flowID,
-                kind: .recordAudio,
-                timestamp: isoTimestamp(),
-                productBundleID: Bundle.main.bundleIdentifier,
-                productPID: ProcessInfo.processInfo.processIdentifier,
-                status: transcriptionFailed ? .failed : .succeeded,
-                accessibilityTrusted: true,
-                microphonePermissionStatus: .granted,
-                requestedMicrophonePermission: session.requestedMicrophonePermission,
-                promptAccessibility: false,
-                blockedReason: nil,
-                settleDelayMs: defaults.settle,
-                pasteDelayMs: defaults.paste,
-                restoreClipboard: false,
-                restoreDelayMs: defaults.restore,
-                textLength: transcriptionArtifact.textLength,
-                hotKeyInteractionModel: .pressAndHold,
-                insertRoute: nil,
-                insertSource: nil,
-                focusAtReceipt: session.focusAtStart,
-                focusBeforePaste: nil,
-                focusAfterPaste: nil,
-                focusAtStop: focusAtStop,
-                productFrontmostAtReceipt: productFrontmostAtReceipt,
-                productFrontmostBeforePaste: false,
-                productFrontmostAfterPaste: false,
-                originalPasteboard: nil,
-                syntheticPastePosted: false,
-                clipboardRestored: false,
-                recordingStartedAt: session.startedAtTimestamp,
+            guard transcriptionArtifact.status != .failed else {
+                return ProductResponse(
+                    id: session.flowID,
+                    kind: .recordAudio,
+                    timestamp: isoTimestamp(),
+                    productBundleID: Bundle.main.bundleIdentifier,
+                    productPID: ProcessInfo.processInfo.processIdentifier,
+                    status: .failed,
+                    accessibilityTrusted: true,
+                    microphonePermissionStatus: .granted,
+                    requestedMicrophonePermission: session.requestedMicrophonePermission,
+                    promptAccessibility: false,
+                    blockedReason: nil,
+                    settleDelayMs: defaults.settle,
+                    pasteDelayMs: defaults.paste,
+                    restoreClipboard: false,
+                    restoreDelayMs: defaults.restore,
+                    textLength: transcriptionArtifact.textLength,
+                    transcriptionInsertGate: nil,
+                    hotKeyInteractionModel: .pressAndHold,
+                    insertRoute: nil,
+                    insertSource: nil,
+                    focusAtReceipt: session.focusAtStart,
+                    focusBeforePaste: nil,
+                    focusAfterPaste: nil,
+                    focusAtStop: focusAtStop,
+                    productFrontmostAtReceipt: productFrontmostAtReceipt,
+                    productFrontmostBeforePaste: false,
+                    productFrontmostAfterPaste: false,
+                    originalPasteboard: nil,
+                    syntheticPastePosted: false,
+                    clipboardRestored: false,
+                    recordingStartedAt: session.startedAtTimestamp,
+                    recordingStoppedAt: recordingStoppedAt,
+                    recordingArtifact: artifact,
+                    transcriptionArtifact: transcriptionArtifact,
+                    transcribingPlaceholder: false,
+                    error: transcriptionArtifact.error
+                )
+            }
+
+            let insertGate = transcriptionInsertGate(for: transcriptionArtifact.text)
+            guard insertGate == .passed else {
+                return makeGatedHotKeyTranscriptionResponse(
+                    session: session,
+                    recordingStoppedAt: recordingStoppedAt,
+                    productFrontmostAtReceipt: productFrontmostAtReceipt,
+                    focusAtStop: focusAtStop,
+                    recordingArtifact: artifact,
+                    transcriptionArtifact: transcriptionArtifact,
+                    transcriptionInsertGate: insertGate
+                )
+            }
+
+            publishInsertingFlowState(
+                flowID: session.flowID,
+                recordingArtifact: artifact,
+                transcriptionArtifact: transcriptionArtifact
+            )
+
+            let receiptObservation = ReceiptObservation(
+                accessibilityTrusted: isAccessibilityTrusted(prompt: false),
+                focusSnapshot: session.focusAtStart
+            )
+            let insertResponse = try insertTranscription(
+                text: transcriptionArtifact.text,
+                requestID: session.flowID,
+                presentsBlockedUI: false,
+                receiptObservation: receiptObservation
+            )
+            return makeCompletedHotKeyInsertResponse(
+                insertResponse: insertResponse,
+                session: session,
                 recordingStoppedAt: recordingStoppedAt,
+                focusAtStop: focusAtStop,
                 recordingArtifact: artifact,
                 transcriptionArtifact: transcriptionArtifact,
-                transcribingPlaceholder: false,
-                error: transcriptionArtifact.error
+                transcriptionInsertGate: insertGate
             )
         } catch {
             return ProductResponse(
@@ -1458,6 +1521,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreClipboard: false,
                 restoreDelayMs: defaults.restore,
                 textLength: 0,
+                transcriptionInsertGate: nil,
                 hotKeyInteractionModel: .pressAndHold,
                 insertRoute: nil,
                 insertSource: nil,
@@ -1479,6 +1543,128 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 error: "\(error)"
             )
         }
+    }
+
+    private func publishInsertingFlowState(
+        flowID: String,
+        recordingArtifact: RecordingArtifact,
+        transcriptionArtifact: TranscriptionArtifact
+    ) {
+        let update = {
+            self.transitionFlow(
+                to: .inserting,
+                id: flowID,
+                trigger: .globalHotKey,
+                textLength: transcriptionArtifact.textLength,
+                transcriptionInsertGate: .passed,
+                recordingDurationMs: recordingArtifact.durationMs,
+                recordingFilePath: recordingArtifact.filePath
+            )
+        }
+
+        if Thread.isMainThread {
+            update()
+        } else {
+            DispatchQueue.main.sync(execute: update)
+        }
+    }
+
+    private func makeCompletedHotKeyInsertResponse(
+        insertResponse: ProductResponse,
+        session: ActiveRecordingSession,
+        recordingStoppedAt: String,
+        focusAtStop: FocusSnapshot?,
+        recordingArtifact: RecordingArtifact,
+        transcriptionArtifact: TranscriptionArtifact,
+        transcriptionInsertGate: TranscriptionInsertGate
+    ) -> ProductResponse {
+        ProductResponse(
+            id: insertResponse.id,
+            kind: .insertTranscription,
+            timestamp: insertResponse.timestamp,
+            productBundleID: insertResponse.productBundleID,
+            productPID: insertResponse.productPID,
+            status: insertResponse.status,
+            accessibilityTrusted: insertResponse.accessibilityTrusted,
+            microphonePermissionStatus: .granted,
+            requestedMicrophonePermission: session.requestedMicrophonePermission,
+            promptAccessibility: false,
+            blockedReason: insertResponse.blockedReason,
+            settleDelayMs: insertResponse.settleDelayMs,
+            pasteDelayMs: insertResponse.pasteDelayMs,
+            restoreClipboard: insertResponse.restoreClipboard,
+            restoreDelayMs: insertResponse.restoreDelayMs,
+            textLength: transcriptionArtifact.textLength,
+            transcriptionInsertGate: transcriptionInsertGate,
+            hotKeyInteractionModel: .pressAndHold,
+            insertRoute: insertResponse.insertRoute,
+            insertSource: insertResponse.insertSource,
+            focusAtReceipt: insertResponse.focusAtReceipt,
+            focusBeforePaste: insertResponse.focusBeforePaste,
+            focusAfterPaste: insertResponse.focusAfterPaste,
+            focusAtStop: focusAtStop,
+            productFrontmostAtReceipt: insertResponse.productFrontmostAtReceipt,
+            productFrontmostBeforePaste: insertResponse.productFrontmostBeforePaste,
+            productFrontmostAfterPaste: insertResponse.productFrontmostAfterPaste,
+            originalPasteboard: insertResponse.originalPasteboard,
+            syntheticPastePosted: insertResponse.syntheticPastePosted,
+            clipboardRestored: insertResponse.clipboardRestored,
+            recordingStartedAt: session.startedAtTimestamp,
+            recordingStoppedAt: recordingStoppedAt,
+            recordingArtifact: recordingArtifact,
+            transcriptionArtifact: transcriptionArtifact,
+            transcribingPlaceholder: false,
+            error: insertResponse.error
+        )
+    }
+
+    private func makeGatedHotKeyTranscriptionResponse(
+        session: ActiveRecordingSession,
+        recordingStoppedAt: String,
+        productFrontmostAtReceipt: Bool,
+        focusAtStop: FocusSnapshot?,
+        recordingArtifact: RecordingArtifact,
+        transcriptionArtifact: TranscriptionArtifact,
+        transcriptionInsertGate: TranscriptionInsertGate
+    ) -> ProductResponse {
+        ProductResponse(
+            id: session.flowID,
+            kind: .insertTranscription,
+            timestamp: isoTimestamp(),
+            productBundleID: Bundle.main.bundleIdentifier,
+            productPID: ProcessInfo.processInfo.processIdentifier,
+            status: .succeeded,
+            accessibilityTrusted: isAccessibilityTrusted(prompt: false),
+            microphonePermissionStatus: .granted,
+            requestedMicrophonePermission: session.requestedMicrophonePermission,
+            promptAccessibility: false,
+            blockedReason: nil,
+            settleDelayMs: defaults.settle,
+            pasteDelayMs: defaults.paste,
+            restoreClipboard: false,
+            restoreDelayMs: defaults.restore,
+            textLength: transcriptionArtifact.textLength,
+            transcriptionInsertGate: transcriptionInsertGate,
+            hotKeyInteractionModel: .pressAndHold,
+            insertRoute: nil,
+            insertSource: .transcription,
+            focusAtReceipt: session.focusAtStart,
+            focusBeforePaste: nil,
+            focusAfterPaste: nil,
+            focusAtStop: focusAtStop,
+            productFrontmostAtReceipt: productFrontmostAtReceipt,
+            productFrontmostBeforePaste: false,
+            productFrontmostAfterPaste: false,
+            originalPasteboard: nil,
+            syntheticPastePosted: false,
+            clipboardRestored: false,
+            recordingStartedAt: session.startedAtTimestamp,
+            recordingStoppedAt: recordingStoppedAt,
+            recordingArtifact: recordingArtifact,
+            transcriptionArtifact: transcriptionArtifact,
+            transcribingPlaceholder: false,
+            error: nil
+        )
     }
 
     private func replaceRecordingArtifactWithFixtureIfNeeded(session: ActiveRecordingSession) throws {
@@ -1705,6 +1891,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreClipboard: false,
             restoreDelayMs: defaults.restore,
             textLength: 0,
+            transcriptionInsertGate: nil,
             hotKeyInteractionModel: .pressAndHold,
             insertRoute: nil,
             insertSource: nil,
@@ -1751,6 +1938,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreClipboard: false,
             restoreDelayMs: defaults.restore,
             textLength: 0,
+            transcriptionInsertGate: nil,
             hotKeyInteractionModel: .pressAndHold,
             insertRoute: nil,
             insertSource: nil,
@@ -1787,6 +1975,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         pendingStopAfterRecordingStart = false
         lastRequestID = response.id
         lastResponseStatus = response.status
+        lastTranscriptionInsertGate = response.transcriptionInsertGate
         lastBlockedReason = response.blockedReason
         lastError = response.error
         lastRecording = response.recordingArtifact
@@ -1797,6 +1986,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             id: flowID,
             trigger: .globalHotKey,
             textLength: response.textLength,
+            transcriptionInsertGate: response.transcriptionInsertGate,
             blockedReason: response.blockedReason,
             error: response.error,
             recordingDurationMs: response.recordingArtifact?.durationMs,
@@ -1824,6 +2014,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         id: String? = nil,
         trigger: FlowTriggerSource? = nil,
         textLength: Int = 0,
+        transcriptionInsertGate: TranscriptionInsertGate? = nil,
         blockedReason: String? = nil,
         error: String? = nil,
         recordingDurationMs: Int? = nil,
@@ -1835,6 +2026,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             trigger: trigger,
             timestamp: isoTimestamp(),
             textLength: textLength,
+            transcriptionInsertGate: transcriptionInsertGate,
             blockedReason: blockedReason,
             error: error,
             recordingDurationMs: recordingDurationMs,
@@ -1849,6 +2041,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 trigger: trigger,
                 timestamp: snapshot.timestamp,
                 textLength: textLength,
+                transcriptionInsertGate: transcriptionInsertGate,
                 blockedReason: blockedReason,
                 error: error,
                 recordingDurationMs: recordingDurationMs,
@@ -1908,6 +2101,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             isProcessing: isProcessing,
             lastRequestID: lastRequestID,
             lastResponseStatus: lastResponseStatus,
+            lastTranscriptionInsertGate: lastTranscriptionInsertGate,
             lastBlockedReason: lastBlockedReason,
             lastError: lastError,
             microphonePermissionStatus: currentMicrophonePermissionStatus(),
@@ -1973,6 +2167,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreClipboard: false,
                 restoreDelayMs: defaults.restore,
                 textLength: 0,
+                transcriptionInsertGate: nil,
                 hotKeyInteractionModel: nil,
                 insertRoute: nil,
                 insertSource: nil,
@@ -2022,6 +2217,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreClipboard: request.restoreClipboard,
             restoreDelayMs: request.restoreDelayMs ?? defaults.restore,
             textLength: request.text?.count ?? 0,
+            transcriptionInsertGate: nil,
             hotKeyInteractionModel: .pressAndHold,
             insertRoute: nil,
             insertSource: nil,
@@ -2115,6 +2311,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreClipboard: request.restoreClipboard,
                 restoreDelayMs: restoreDelayMs,
                 textLength: text?.count ?? 0,
+                transcriptionInsertGate: nil,
                 hotKeyInteractionModel: nil,
                 insertRoute: .pasteboardCommandV,
                 insertSource: source,
@@ -2172,6 +2369,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreClipboard: request.restoreClipboard,
                 restoreDelayMs: restoreDelayMs,
                 textLength: text.count,
+                transcriptionInsertGate: nil,
                 hotKeyInteractionModel: nil,
                 insertRoute: .pasteboardCommandV,
                 insertSource: source,
@@ -2218,6 +2416,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreClipboard: request.restoreClipboard,
             restoreDelayMs: restoreDelayMs,
             textLength: text.count,
+            transcriptionInsertGate: nil,
             hotKeyInteractionModel: nil,
             insertRoute: .pasteboardCommandV,
             insertSource: source,
@@ -2261,6 +2460,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreClipboard: request.restoreClipboard,
             restoreDelayMs: request.restoreDelayMs ?? defaults.restore,
             textLength: 0,
+            transcriptionInsertGate: nil,
             hotKeyInteractionModel: nil,
             insertRoute: nil,
             insertSource: nil,
@@ -2303,6 +2503,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         activeRequestID = nil
         lastRequestID = response.id
         lastResponseStatus = response.status
+        lastTranscriptionInsertGate = response.transcriptionInsertGate
         lastBlockedReason = response.blockedReason
         lastError = response.error
         if let recordingArtifact = response.recordingArtifact {

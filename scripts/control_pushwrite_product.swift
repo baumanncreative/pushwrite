@@ -88,6 +88,7 @@ struct ProductFlowSnapshot: Codable {
     let trigger: String?
     let timestamp: String
     let textLength: Int
+    let transcriptionInsertGate: String?
     let blockedReason: String?
     let error: String?
     let recordingDurationMs: Int?
@@ -109,6 +110,12 @@ struct RecordingArtifact: Codable {
 enum TranscriptionStatus: String, Codable {
     case succeeded
     case failed
+}
+
+enum TranscriptionInsertGate: String, Codable {
+    case passed
+    case empty
+    case tooShort
 }
 
 struct TranscriptionArtifact: Codable {
@@ -144,6 +151,7 @@ struct ProductState: Codable {
     let isProcessing: Bool
     let lastRequestID: String?
     let lastResponseStatus: ProductResponseStatus?
+    let lastTranscriptionInsertGate: TranscriptionInsertGate?
     let lastBlockedReason: String?
     let lastError: String?
     let microphonePermissionStatus: MicrophonePermissionStatus
@@ -172,6 +180,7 @@ struct ProductResponse: Codable {
     let restoreClipboard: Bool
     let restoreDelayMs: UInt32
     let textLength: Int
+    let transcriptionInsertGate: TranscriptionInsertGate?
     let hotKeyInteractionModel: HotKeyInteractionModel?
     let insertRoute: String?
     let insertSource: String?
