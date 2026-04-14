@@ -10,6 +10,11 @@ struct Options {
     var blockedRuntimeDir = ""
     var deniedRuntimeDir = ""
     var noMicrophoneRuntimeDir = ""
+    var inferenceFailureRuntimeDir = ""
+    var whisperCLIPath: String?
+    var whisperModelPath: String?
+    var whisperLanguage = "en"
+    var transcriptionFixtureWAVPath: String?
     var resultsFile: String?
     var holdDurationMs = 900
     var skipBuild = false
@@ -54,6 +59,31 @@ struct RecordingArtifact: Codable {
     let createdAt: String
 }
 
+enum TranscriptionStatus: String, Codable {
+    case succeeded
+    case failed
+}
+
+struct TranscriptionArtifact: Codable {
+    let id: String
+    let recordingID: String
+    let recordingFilePath: String
+    let artifactPath: String
+    let textFilePath: String
+    let rawOutputJSONPath: String
+    let cliPath: String
+    let modelPath: String
+    let modelName: String
+    let language: String
+    let status: TranscriptionStatus
+    let text: String
+    let textLength: Int
+    let startedAt: String
+    let completedAt: String
+    let durationMs: Int
+    let error: String?
+}
+
 struct ProductState: Codable {
     let timestamp: String
     let runtimeDir: String
@@ -73,6 +103,7 @@ struct ProductState: Codable {
     let hotKeyInteractionModel: String
     let activeRecordingID: String?
     let lastRecording: RecordingArtifact?
+    let lastTranscription: TranscriptionArtifact?
     let hotKey: HotKeyStateSnapshot
     let flow: ProductFlowSnapshot
 }
@@ -129,6 +160,7 @@ struct ProductResponse: Codable {
     let recordingStartedAt: String?
     let recordingStoppedAt: String?
     let recordingArtifact: RecordingArtifact?
+    let transcriptionArtifact: TranscriptionArtifact?
     let transcribingPlaceholder: Bool
     let error: String?
 }
@@ -177,9 +209,11 @@ struct ValidationSummary: Codable {
     let blockedRuntimeDir: String
     let deniedRuntimeDir: String
     let noMicrophoneRuntimeDir: String
+    let inferenceFailureRuntimeDir: String
     let holdDurationMs: Int
     let promptValidation: PromptValidationSummary
     let success: ScenarioSummary
+    let inferenceFailure: ScenarioSummary
     let blockedAccessibility: ScenarioSummary
     let microphoneDenied: ScenarioSummary
     let noMicrophone: ScenarioSummary
@@ -242,6 +276,16 @@ func parseOptions(arguments: [String]) throws -> Options {
             options.deniedRuntimeDir = try requireValue(for: argument)
         case "--no-microphone-runtime-dir":
             options.noMicrophoneRuntimeDir = try requireValue(for: argument)
+        case "--inference-failure-runtime-dir":
+            options.inferenceFailureRuntimeDir = try requireValue(for: argument)
+        case "--whisper-cli-path":
+            options.whisperCLIPath = try requireValue(for: argument)
+        case "--whisper-model-path":
+            options.whisperModelPath = try requireValue(for: argument)
+        case "--whisper-language":
+            options.whisperLanguage = try requireValue(for: argument)
+        case "--transcription-fixture-wav":
+            options.transcriptionFixtureWAVPath = try requireValue(for: argument)
         case "--results-file":
             options.resultsFile = try requireValue(for: argument)
         case "--hold-duration-ms":
@@ -336,6 +380,18 @@ func candidateProductOutputDir(repoRoot: String) -> String {
     "\(repoRoot)/build/pushwrite-product-candidate"
 }
 
+func defaultWhisperCLIPath(repoRoot: String) -> String {
+    "\(repoRoot)/build/whispercpp/build/bin/whisper-cli"
+}
+
+func defaultWhisperModelPath(repoRoot: String) -> String {
+    "\(repoRoot)/models/ggml-tiny.bin"
+}
+
+func defaultTranscriptionFixtureWAVPath(repoRoot: String) -> String {
+    "\(repoRoot)/build/whispercpp/micro-machines-16k-mono.wav"
+}
+
 func buildProduct(repoRoot: String, outputDir: String) throws -> URL {
     let scriptPath = "\(repoRoot)/scripts/build_pushwrite_product.sh"
     let output = try runProcess("/bin/zsh", arguments: [scriptPath, outputDir], currentDirectory: repoRoot)
@@ -371,6 +427,10 @@ func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
 func launchProduct(
     productAppPath: String,
     runtimeDir: String,
+    whisperCLIPath: String?,
+    whisperModelPath: String?,
+    whisperLanguage: String?,
+    transcriptionFixtureWAVPath: String?,
     forceAccessibilityBlocked: Bool,
     forceAccessibilityTrusted: Bool,
     forceMicrophoneDenied: Bool,
@@ -386,6 +446,18 @@ func launchProduct(
     }
 
     var arguments = ["--runtime-dir", runtimeDir]
+    if let whisperCLIPath, !whisperCLIPath.isEmpty {
+        arguments.append(contentsOf: ["--whisper-cli-path", whisperCLIPath])
+    }
+    if let whisperModelPath, !whisperModelPath.isEmpty {
+        arguments.append(contentsOf: ["--whisper-model-path", whisperModelPath])
+    }
+    if let whisperLanguage, !whisperLanguage.isEmpty {
+        arguments.append(contentsOf: ["--whisper-language", whisperLanguage])
+    }
+    if let transcriptionFixtureWAVPath, !transcriptionFixtureWAVPath.isEmpty {
+        arguments.append(contentsOf: ["--transcription-fixture-wav", transcriptionFixtureWAVPath])
+    }
     if forceAccessibilityBlocked {
         arguments.append("--force-accessibility-blocked")
     }
@@ -568,6 +640,10 @@ func runScenario(
     productAppPath: String,
     runtimeDir: String,
     holdDurationMs: Int,
+    whisperCLIPath: String?,
+    whisperModelPath: String?,
+    whisperLanguage: String?,
+    transcriptionFixtureWAVPath: String?,
     forceAccessibilityBlocked: Bool,
     forceAccessibilityTrusted: Bool,
     forceMicrophoneDenied: Bool,
@@ -576,13 +652,20 @@ func runScenario(
     expectedStatus: String,
     expectedBlockedReason: String? = nil,
     expectedErrorContains: String? = nil,
-    expectRecordingArtifact: Bool
+    expectedTranscriptionStatus: TranscriptionStatus? = nil,
+    expectedTranscriptionErrorContains: String? = nil,
+    expectRecordingArtifact: Bool,
+    expectNonEmptyTranscriptText: Bool = false
 ) throws -> ScenarioSummary {
     try? FileManager.default.removeItem(atPath: runtimeDir)
 
     let launchState = try launchProduct(
         productAppPath: productAppPath,
         runtimeDir: runtimeDir,
+        whisperCLIPath: whisperCLIPath,
+        whisperModelPath: whisperModelPath,
+        whisperLanguage: whisperLanguage,
+        transcriptionFixtureWAVPath: transcriptionFixtureWAVPath,
         forceAccessibilityBlocked: forceAccessibilityBlocked,
         forceAccessibilityTrusted: forceAccessibilityTrusted,
         forceMicrophoneDenied: forceMicrophoneDenied,
@@ -607,6 +690,15 @@ func runScenario(
 
     let artifactFileExists = hotKeyResponse.recordingArtifact.map { FileManager.default.fileExists(atPath: $0.filePath) } ?? false
     let artifactMetadataExists = hotKeyResponse.recordingArtifact.map { FileManager.default.fileExists(atPath: $0.metadataPath) } ?? false
+    let transcriptionArtifactFileExists = hotKeyResponse.transcriptionArtifact.map {
+        FileManager.default.fileExists(atPath: $0.artifactPath)
+    } ?? false
+    let transcriptionTextFileExists = hotKeyResponse.transcriptionArtifact.map {
+        FileManager.default.fileExists(atPath: $0.textFilePath)
+    } ?? false
+    let transcriptionRawJSONFileExists = hotKeyResponse.transcriptionArtifact.map {
+        FileManager.default.fileExists(atPath: $0.rawOutputJSONPath)
+    } ?? false
     let frontmostAfterTrigger = frontmostBundleID()
 
     var failureReasons: [String] = []
@@ -625,6 +717,14 @@ func runScenario(
         }
     } else if hotKeyResponse.error != nil {
         failureReasons.append("unexpected-error-present")
+    }
+    if let expectedTranscriptionStatus, hotKeyResponse.transcriptionArtifact?.status != expectedTranscriptionStatus {
+        failureReasons.append("unexpected-transcription-status")
+    }
+    if let expectedTranscriptionErrorContains {
+        if hotKeyResponse.transcriptionArtifact?.error?.contains(expectedTranscriptionErrorContains) != true {
+            failureReasons.append("unexpected-transcription-error")
+        }
     }
     if expectRecordingArtifact {
         if hotKeyResponse.microphonePermissionStatus != .granted {
@@ -645,11 +745,32 @@ func runScenario(
         if hotKeyResponse.recordingArtifact?.durationMs ?? 0 <= 0 {
             failureReasons.append("non-positive-recording-duration")
         }
-        if !hotKeyResponse.transcribingPlaceholder {
-            failureReasons.append("missing-transcribing-placeholder")
+        if hotKeyResponse.transcribingPlaceholder {
+            failureReasons.append("unexpected-transcribing-placeholder")
         }
         if hotKeyResponse.syntheticPastePosted {
             failureReasons.append("synthetic-paste-posted-during-recording-stage")
+        }
+        if let expectedTranscriptionStatus {
+            if hotKeyResponse.transcriptionArtifact == nil {
+                failureReasons.append("missing-transcription-artifact")
+            }
+            if !transcriptionArtifactFileExists {
+                failureReasons.append("missing-transcription-artifact-file")
+            }
+            if expectedTranscriptionStatus == .succeeded {
+                if !transcriptionTextFileExists {
+                    failureReasons.append("missing-transcription-text-file")
+                }
+                if !transcriptionRawJSONFileExists {
+                    failureReasons.append("missing-transcription-raw-json")
+                }
+            }
+            if expectNonEmptyTranscriptText, (hotKeyResponse.transcriptionArtifact?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false) {
+                failureReasons.append("empty-transcription-text")
+            }
+        } else if hotKeyResponse.transcriptionArtifact != nil {
+            failureReasons.append("unexpected-transcription-artifact")
         }
         failureReasons.append(contentsOf: missingFlowReasons(
             flowStates: flowStates,
@@ -661,12 +782,23 @@ func runScenario(
         if finalState?.lastRecording?.id != hotKeyResponse.id {
             failureReasons.append("state-last-recording-mismatch")
         }
+        if let expectedTranscriptionStatus {
+            if finalState?.lastTranscription?.id != hotKeyResponse.id {
+                failureReasons.append("state-last-transcription-mismatch")
+            }
+            if finalState?.lastTranscription?.status != expectedTranscriptionStatus {
+                failureReasons.append("state-last-transcription-status-mismatch")
+            }
+        }
     } else {
         if hotKeyResponse.recordingArtifact != nil {
             failureReasons.append("unexpected-recording-artifact")
         }
         if artifactFileExists || artifactMetadataExists {
             failureReasons.append("unexpected-recording-files")
+        }
+        if hotKeyResponse.transcriptionArtifact != nil {
+            failureReasons.append("unexpected-transcription-artifact")
         }
         failureReasons.append(contentsOf: missingFlowReasons(
             flowStates: flowStates,
@@ -726,16 +858,19 @@ func main() -> Int32 {
     }
 
     if options.successRuntimeDir.isEmpty {
-        options.successRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002i-recording-success"
+        options.successRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002j-transcription-success"
     }
     if options.blockedRuntimeDir.isEmpty {
-        options.blockedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002i-recording-blocked"
+        options.blockedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002j-transcription-blocked"
     }
     if options.deniedRuntimeDir.isEmpty {
-        options.deniedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002i-recording-denied"
+        options.deniedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002j-transcription-denied"
     }
     if options.noMicrophoneRuntimeDir.isEmpty {
-        options.noMicrophoneRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002i-recording-no-mic"
+        options.noMicrophoneRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002j-transcription-no-mic"
+    }
+    if options.inferenceFailureRuntimeDir.isEmpty {
+        options.inferenceFailureRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002j-transcription-inference-failure"
     }
 
     let productAppURL: URL
@@ -743,6 +878,24 @@ func main() -> Int32 {
         productAppURL = try resolveProductApp(repoRoot: repoRoot, options: options)
     } catch {
         fputs("\(error)\n", stderr)
+        return 1
+    }
+
+    let whisperCLIPath = options.whisperCLIPath ?? defaultWhisperCLIPath(repoRoot: repoRoot)
+    let whisperModelPath = options.whisperModelPath ?? defaultWhisperModelPath(repoRoot: repoRoot)
+    let transcriptionFixtureWAVPath = options.transcriptionFixtureWAVPath ?? defaultTranscriptionFixtureWAVPath(repoRoot: repoRoot)
+    let inferenceFailureModelPath = "\(repoRoot)/models/ggml-tiny-missing-002j.bin"
+
+    guard FileManager.default.isExecutableFile(atPath: whisperCLIPath) else {
+        fputs("Missing whisper-cli at \(whisperCLIPath)\n", stderr)
+        return 1
+    }
+    guard FileManager.default.fileExists(atPath: whisperModelPath) else {
+        fputs("Missing whisper model at \(whisperModelPath)\n", stderr)
+        return 1
+    }
+    guard FileManager.default.fileExists(atPath: transcriptionFixtureWAVPath) else {
+        fputs("Missing transcription fixture WAV at \(transcriptionFixtureWAVPath)\n", stderr)
         return 1
     }
 
@@ -756,6 +909,10 @@ func main() -> Int32 {
         promptLaunchState = try launchProduct(
             productAppPath: productAppURL.path,
             runtimeDir: options.successRuntimeDir,
+            whisperCLIPath: whisperCLIPath,
+            whisperModelPath: whisperModelPath,
+            whisperLanguage: options.whisperLanguage,
+            transcriptionFixtureWAVPath: nil,
             forceAccessibilityBlocked: false,
             forceAccessibilityTrusted: true,
             forceMicrophoneDenied: false,
@@ -773,7 +930,7 @@ func main() -> Int32 {
         firstPromptObservedInThisRun: false,
         notes: promptLaunchState.microphonePermissionStatus == .granted
             ? [
-                "The workstation already had microphone permission granted for PushWrite before 002I validation.",
+                "The workstation already had microphone permission granted for PushWrite before 002J validation.",
                 "No TCC reset was performed, so the OS first-prompt could not be re-observed in this run.",
                 "Launch created neither recording artifacts nor a hotkey response before the first hotkey press."
             ]
@@ -793,16 +950,50 @@ func main() -> Int32 {
             productAppPath: productAppURL.path,
             runtimeDir: options.successRuntimeDir,
             holdDurationMs: options.holdDurationMs,
+            whisperCLIPath: whisperCLIPath,
+            whisperModelPath: whisperModelPath,
+            whisperLanguage: options.whisperLanguage,
+            transcriptionFixtureWAVPath: transcriptionFixtureWAVPath,
             forceAccessibilityBlocked: false,
             forceAccessibilityTrusted: true,
             forceMicrophoneDenied: false,
             forceNoMicrophoneDevice: false,
             expectedTerminalState: "done",
             expectedStatus: "succeeded",
-            expectRecordingArtifact: true
+            expectedTranscriptionStatus: .succeeded,
+            expectRecordingArtifact: true,
+            expectNonEmptyTranscriptText: true
         )
     } catch {
         fputs("Success recording validation failed: \(error)\n", stderr)
+        return 1
+    }
+
+    let inferenceFailureScenario: ScenarioSummary
+    do {
+        inferenceFailureScenario = try runScenario(
+            name: "inference_failure",
+            repoRoot: repoRoot,
+            productAppPath: productAppURL.path,
+            runtimeDir: options.inferenceFailureRuntimeDir,
+            holdDurationMs: options.holdDurationMs,
+            whisperCLIPath: whisperCLIPath,
+            whisperModelPath: inferenceFailureModelPath,
+            whisperLanguage: options.whisperLanguage,
+            transcriptionFixtureWAVPath: transcriptionFixtureWAVPath,
+            forceAccessibilityBlocked: false,
+            forceAccessibilityTrusted: true,
+            forceMicrophoneDenied: false,
+            forceNoMicrophoneDevice: false,
+            expectedTerminalState: "error",
+            expectedStatus: "failed",
+            expectedErrorContains: "whisper.cpp model is missing",
+            expectedTranscriptionStatus: .failed,
+            expectedTranscriptionErrorContains: "whisper.cpp model is missing",
+            expectRecordingArtifact: true
+        )
+    } catch {
+        fputs("Inference failure validation failed: \(error)\n", stderr)
         return 1
     }
 
@@ -814,6 +1005,10 @@ func main() -> Int32 {
             productAppPath: productAppURL.path,
             runtimeDir: options.blockedRuntimeDir,
             holdDurationMs: 120,
+            whisperCLIPath: whisperCLIPath,
+            whisperModelPath: whisperModelPath,
+            whisperLanguage: options.whisperLanguage,
+            transcriptionFixtureWAVPath: nil,
             forceAccessibilityBlocked: true,
             forceAccessibilityTrusted: false,
             forceMicrophoneDenied: false,
@@ -836,6 +1031,10 @@ func main() -> Int32 {
             productAppPath: productAppURL.path,
             runtimeDir: options.deniedRuntimeDir,
             holdDurationMs: 120,
+            whisperCLIPath: whisperCLIPath,
+            whisperModelPath: whisperModelPath,
+            whisperLanguage: options.whisperLanguage,
+            transcriptionFixtureWAVPath: nil,
             forceAccessibilityBlocked: false,
             forceAccessibilityTrusted: true,
             forceMicrophoneDenied: true,
@@ -858,6 +1057,10 @@ func main() -> Int32 {
             productAppPath: productAppURL.path,
             runtimeDir: options.noMicrophoneRuntimeDir,
             holdDurationMs: 120,
+            whisperCLIPath: whisperCLIPath,
+            whisperModelPath: whisperModelPath,
+            whisperLanguage: options.whisperLanguage,
+            transcriptionFixtureWAVPath: nil,
             forceAccessibilityBlocked: false,
             forceAccessibilityTrusted: true,
             forceMicrophoneDenied: false,
@@ -879,9 +1082,11 @@ func main() -> Int32 {
         blockedRuntimeDir: options.blockedRuntimeDir,
         deniedRuntimeDir: options.deniedRuntimeDir,
         noMicrophoneRuntimeDir: options.noMicrophoneRuntimeDir,
+        inferenceFailureRuntimeDir: options.inferenceFailureRuntimeDir,
         holdDurationMs: options.holdDurationMs,
         promptValidation: promptValidation,
         success: successScenario,
+        inferenceFailure: inferenceFailureScenario,
         blockedAccessibility: blockedScenario,
         microphoneDenied: deniedScenario,
         noMicrophone: noMicrophoneScenario

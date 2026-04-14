@@ -64,6 +64,10 @@ var runtimeNoMicrophoneDeviceOverride = false
 struct LaunchOptions {
     let runtimeDir: String
     let simulatedTranscriptionText: String
+    let whisperCLIPath: String?
+    let whisperModelPath: String?
+    let whisperLanguage: String
+    let transcriptionFixtureWAVPath: String?
     let forceAccessibilityBlocked: Bool
     let forceAccessibilityTrusted: Bool
     let forceMicrophoneDenied: Bool
@@ -163,6 +167,31 @@ struct RecordingArtifact: Codable {
     let createdAt: String
 }
 
+enum TranscriptionStatus: String, Codable {
+    case succeeded
+    case failed
+}
+
+struct TranscriptionArtifact: Codable {
+    let id: String
+    let recordingID: String
+    let recordingFilePath: String
+    let artifactPath: String
+    let textFilePath: String
+    let rawOutputJSONPath: String
+    let cliPath: String
+    let modelPath: String
+    let modelName: String
+    let language: String
+    let status: TranscriptionStatus
+    let text: String
+    let textLength: Int
+    let startedAt: String
+    let completedAt: String
+    let durationMs: Int
+    let error: String?
+}
+
 struct ProductRequest: Codable {
     let id: String
     let kind: ProductRequestKind
@@ -207,6 +236,7 @@ struct ProductResponse: Codable {
     let recordingStartedAt: String?
     let recordingStoppedAt: String?
     let recordingArtifact: RecordingArtifact?
+    let transcriptionArtifact: TranscriptionArtifact?
     let transcribingPlaceholder: Bool
     let error: String?
 }
@@ -230,6 +260,7 @@ struct ProductState: Codable {
     let hotKeyInteractionModel: HotKeyInteractionModel
     let activeRecordingID: String?
     let lastRecording: RecordingArtifact?
+    let lastTranscription: TranscriptionArtifact?
     let hotKey: HotKeyStateSnapshot
     let flow: ProductFlowSnapshot
 }
@@ -274,6 +305,22 @@ struct ProductPaths {
     func recordingMetadataFile(for id: String) -> String {
         "\(recordingsDir)/\(id).json"
     }
+
+    func transcriptionOutputBase(for id: String) -> String {
+        "\(recordingsDir)/\(id).transcription"
+    }
+
+    func transcriptionTextFile(for id: String) -> String {
+        "\(transcriptionOutputBase(for: id)).txt"
+    }
+
+    func transcriptionRawJSONFile(for id: String) -> String {
+        "\(transcriptionOutputBase(for: id)).json"
+    }
+
+    func transcriptionArtifactFile(for id: String) -> String {
+        "\(transcriptionOutputBase(for: id)).artifact.json"
+    }
 }
 
 enum ProductRuntimeError: Error, CustomStringConvertible {
@@ -287,6 +334,14 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
     case microphoneRecordingStartFailed
     case eventSourceUnavailable
     case eventCreationFailed
+    case missingWhisperCLI(String)
+    case missingWhisperModel(String)
+    case missingTranscriptionFixture(String)
+    case failedToInspectRecording(String)
+    case failedToReplaceRecordingArtifact(String)
+    case transcriptionLaunchFailed(String)
+    case transcriptionProcessFailed(String)
+    case missingTranscriptionOutput(String)
 
     var description: String {
         switch self {
@@ -310,6 +365,22 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
             return "Could not create a CGEventSource for keyboard events."
         case .eventCreationFailed:
             return "Could not create one or more keyboard events for Cmd+V."
+        case let .missingWhisperCLI(path):
+            return "whisper.cpp CLI is missing at \(path)."
+        case let .missingWhisperModel(path):
+            return "whisper.cpp model is missing at \(path)."
+        case let .missingTranscriptionFixture(path):
+            return "Transcription fixture WAV is missing at \(path)."
+        case let .failedToInspectRecording(message):
+            return "PushWrite could not inspect the recording artifact: \(message)"
+        case let .failedToReplaceRecordingArtifact(message):
+            return "PushWrite could not prepare the recording artifact for transcription: \(message)"
+        case let .transcriptionLaunchFailed(message):
+            return "PushWrite could not start whisper.cpp inference: \(message)"
+        case let .transcriptionProcessFailed(message):
+            return "whisper.cpp inference failed: \(message)"
+        case let .missingTranscriptionOutput(path):
+            return "whisper.cpp did not produce the expected transcription output at \(path)."
         }
     }
 }
@@ -348,6 +419,10 @@ final class ActiveRecordingSession {
 func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
     var runtimeDir = ProcessInfo.processInfo.environment["PUSHWRITE_PRODUCT_RUNTIME_DIR"] ?? ""
     var simulatedTranscriptionText = defaultSimulatedTranscriptionText()
+    var whisperCLIPath = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_CLI_PATH"]
+    var whisperModelPath = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_MODEL_PATH"]
+    var whisperLanguage = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_LANGUAGE"] ?? "auto"
+    var transcriptionFixtureWAVPath = ProcessInfo.processInfo.environment["PUSHWRITE_TRANSCRIPTION_FIXTURE_WAV"]
     var forceAccessibilityBlocked = accessibilityBlockedOverrideEnabled()
     var forceAccessibilityTrusted = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_TRUSTED"] == "1"
     var forceMicrophoneDenied = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_DENIED"] == "1"
@@ -370,6 +445,14 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
             runtimeDir = try requireValue(for: argument)
         case "--simulated-transcription-text":
             simulatedTranscriptionText = try requireValue(for: argument)
+        case "--whisper-cli-path":
+            whisperCLIPath = try requireValue(for: argument)
+        case "--whisper-model-path":
+            whisperModelPath = try requireValue(for: argument)
+        case "--whisper-language":
+            whisperLanguage = try requireValue(for: argument)
+        case "--transcription-fixture-wav":
+            transcriptionFixtureWAVPath = try requireValue(for: argument)
         case "--force-accessibility-blocked":
             forceAccessibilityBlocked = true
         case "--force-accessibility-trusted":
@@ -391,6 +474,10 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
     return LaunchOptions(
         runtimeDir: runtimeDir,
         simulatedTranscriptionText: simulatedTranscriptionText,
+        whisperCLIPath: whisperCLIPath,
+        whisperModelPath: whisperModelPath,
+        whisperLanguage: whisperLanguage,
+        transcriptionFixtureWAVPath: transcriptionFixtureWAVPath,
         forceAccessibilityBlocked: forceAccessibilityBlocked,
         forceAccessibilityTrusted: forceAccessibilityTrusted,
         forceMicrophoneDenied: forceMicrophoneDenied,
@@ -419,6 +506,100 @@ func defaultSimulatedTranscriptionText() -> String {
         return override
     }
     return "PushWrite 002E simulated transcription."
+}
+
+struct RecordingFileDetails {
+    let format: String
+    let sampleRateHz: Double
+    let channelCount: Int
+    let durationMs: Int
+    let fileSizeBytes: UInt64
+}
+
+func defaultWhisperCLIPath() -> String {
+    Bundle.main.bundleURL
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("build", isDirectory: true)
+        .appendingPathComponent("whispercpp", isDirectory: true)
+        .appendingPathComponent("build", isDirectory: true)
+        .appendingPathComponent("bin", isDirectory: true)
+        .appendingPathComponent("whisper-cli", isDirectory: false)
+        .path
+}
+
+func defaultWhisperModelPath() -> String {
+    Bundle.main.bundleURL
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("models", isDirectory: true)
+        .appendingPathComponent("ggml-tiny.bin", isDirectory: false)
+        .path
+}
+
+func resolveWhisperCLIPath(launchOptions: LaunchOptions) throws -> String {
+    let explicitPath = launchOptions.whisperCLIPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let path = (explicitPath?.isEmpty == false ? explicitPath : defaultWhisperCLIPath()) ?? defaultWhisperCLIPath()
+    guard FileManager.default.isExecutableFile(atPath: path) else {
+        throw ProductRuntimeError.missingWhisperCLI(path)
+    }
+    return path
+}
+
+func resolveWhisperModelPath(launchOptions: LaunchOptions) throws -> String {
+    let explicitPath = launchOptions.whisperModelPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let path = (explicitPath?.isEmpty == false ? explicitPath : defaultWhisperModelPath()) ?? defaultWhisperModelPath()
+    guard FileManager.default.fileExists(atPath: path) else {
+        throw ProductRuntimeError.missingWhisperModel(path)
+    }
+    return path
+}
+
+func normalizedWhisperLanguage(_ language: String) -> String {
+    let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "auto" : trimmed
+}
+
+func optionalNonEmptyTrimmed(_ value: String?) -> String? {
+    guard let value else {
+        return nil
+    }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+}
+
+func inspectRecordingArtifact(at fileURL: URL) throws -> RecordingFileDetails {
+    do {
+        let audioFile = try AVAudioFile(forReading: fileURL)
+        let sampleRateHz = audioFile.fileFormat.sampleRate
+        let channelCount = Int(audioFile.fileFormat.channelCount)
+        let durationMs = sampleRateHz > 0
+            ? max(Int((Double(audioFile.length) / sampleRateHz * 1_000.0).rounded()), 0)
+            : 0
+        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let fileSizeBytes = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+
+        let normalizedSampleRateHz = Int(sampleRateHz.rounded())
+        let format: String
+        if fileURL.pathExtension.lowercased() == "wav", normalizedSampleRateHz == 16_000, channelCount == 1 {
+            format = "wav-lpcm-16khz-mono"
+        } else {
+            let channelDescriptor = channelCount == 1 ? "mono" : "\(channelCount)ch"
+            format = "\(fileURL.pathExtension.lowercased())-lpcm-\(normalizedSampleRateHz)hz-\(channelDescriptor)"
+        }
+
+        return RecordingFileDetails(
+            format: format,
+            sampleRateHz: sampleRateHz,
+            channelCount: channelCount,
+            durationMs: durationMs,
+            fileSizeBytes: fileSizeBytes
+        )
+    } catch {
+        throw ProductRuntimeError.failedToInspectRecording("\(error)")
+    }
 }
 
 func hotKeyRegistrationErrorMessage(status: OSStatus) -> String {
@@ -786,6 +967,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private var lastBlockedReason: String?
     private var lastError: String?
     private var lastRecording: RecordingArtifact?
+    private var lastTranscription: TranscriptionArtifact?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyEventHandler: EventHandlerRef?
     private var hotKeyState: HotKeyStateSnapshot
@@ -1059,7 +1241,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
     private func busyBlockedReason() -> String {
         if flowSnapshot.state == .transcribing {
-            return "PushWrite is still preparing the previous recording for transcription."
+            return "PushWrite is still transcribing the previous recording."
         }
         return "PushWrite is already processing another action."
     }
@@ -1213,15 +1395,21 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         measuredDurationMs: Int,
         focusAtStop: FocusSnapshot?
     ) -> ProductResponse {
+        let recordingStoppedAt = isoTimestamp()
+        let productFrontmostAtReceipt = isProductFrontmost(session.focusAtStart)
+
         do {
+            try replaceRecordingArtifactWithFixtureIfNeeded(session: session)
             let artifact = try makeRecordingArtifact(session: session, measuredDurationMs: measuredDurationMs)
+            let transcriptionArtifact = transcribeRecording(session: session, recordingArtifact: artifact)
+            let transcriptionFailed = transcriptionArtifact.status == .failed
             return ProductResponse(
                 id: session.flowID,
                 kind: .recordAudio,
                 timestamp: isoTimestamp(),
                 productBundleID: Bundle.main.bundleIdentifier,
                 productPID: ProcessInfo.processInfo.processIdentifier,
-                status: .succeeded,
+                status: transcriptionFailed ? .failed : .succeeded,
                 accessibilityTrusted: true,
                 microphonePermissionStatus: .granted,
                 requestedMicrophonePermission: session.requestedMicrophonePermission,
@@ -1231,7 +1419,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 pasteDelayMs: defaults.paste,
                 restoreClipboard: false,
                 restoreDelayMs: defaults.restore,
-                textLength: 0,
+                textLength: transcriptionArtifact.textLength,
                 hotKeyInteractionModel: .pressAndHold,
                 insertRoute: nil,
                 insertSource: nil,
@@ -1239,17 +1427,18 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 focusBeforePaste: nil,
                 focusAfterPaste: nil,
                 focusAtStop: focusAtStop,
-                productFrontmostAtReceipt: isProductFrontmost(session.focusAtStart),
+                productFrontmostAtReceipt: productFrontmostAtReceipt,
                 productFrontmostBeforePaste: false,
                 productFrontmostAfterPaste: false,
                 originalPasteboard: nil,
                 syntheticPastePosted: false,
                 clipboardRestored: false,
                 recordingStartedAt: session.startedAtTimestamp,
-                recordingStoppedAt: isoTimestamp(),
+                recordingStoppedAt: recordingStoppedAt,
                 recordingArtifact: artifact,
-                transcribingPlaceholder: true,
-                error: nil
+                transcriptionArtifact: transcriptionArtifact,
+                transcribingPlaceholder: false,
+                error: transcriptionArtifact.error
             )
         } catch {
             return ProductResponse(
@@ -1276,33 +1465,216 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 focusBeforePaste: nil,
                 focusAfterPaste: nil,
                 focusAtStop: focusAtStop,
-                productFrontmostAtReceipt: isProductFrontmost(session.focusAtStart),
+                productFrontmostAtReceipt: productFrontmostAtReceipt,
                 productFrontmostBeforePaste: false,
                 productFrontmostAfterPaste: false,
                 originalPasteboard: nil,
                 syntheticPastePosted: false,
                 clipboardRestored: false,
                 recordingStartedAt: session.startedAtTimestamp,
-                recordingStoppedAt: isoTimestamp(),
+                recordingStoppedAt: recordingStoppedAt,
                 recordingArtifact: nil,
-                transcribingPlaceholder: true,
+                transcriptionArtifact: nil,
+                transcribingPlaceholder: false,
                 error: "\(error)"
             )
         }
     }
 
+    private func replaceRecordingArtifactWithFixtureIfNeeded(session: ActiveRecordingSession) throws {
+        guard
+            let fixturePath = launchOptions.transcriptionFixtureWAVPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !fixturePath.isEmpty
+        else {
+            return
+        }
+
+        guard FileManager.default.fileExists(atPath: fixturePath) else {
+            throw ProductRuntimeError.missingTranscriptionFixture(fixturePath)
+        }
+
+        do {
+            if FileManager.default.fileExists(atPath: session.fileURL.path) {
+                try FileManager.default.removeItem(at: session.fileURL)
+            }
+            try FileManager.default.copyItem(atPath: fixturePath, toPath: session.fileURL.path)
+        } catch {
+            throw ProductRuntimeError.failedToReplaceRecordingArtifact("\(error)")
+        }
+    }
+
+    private func transcribeRecording(
+        session: ActiveRecordingSession,
+        recordingArtifact: RecordingArtifact
+    ) -> TranscriptionArtifact {
+        let configuredCLIPath = optionalNonEmptyTrimmed(launchOptions.whisperCLIPath) ?? defaultWhisperCLIPath()
+        let configuredModelPath = optionalNonEmptyTrimmed(launchOptions.whisperModelPath) ?? defaultWhisperModelPath()
+        let configuredLanguage = normalizedWhisperLanguage(launchOptions.whisperLanguage)
+        let artifactPath = paths.transcriptionArtifactFile(for: session.flowID)
+        let textFilePath = paths.transcriptionTextFile(for: session.flowID)
+        let rawOutputJSONPath = paths.transcriptionRawJSONFile(for: session.flowID)
+        let startedAt = isoTimestamp()
+        let started = Date()
+
+        do {
+            let cliPath = try resolveWhisperCLIPath(launchOptions: launchOptions)
+            let modelPath = try resolveWhisperModelPath(launchOptions: launchOptions)
+            let transcriptText = try runWhisperCLI(
+                cliPath: cliPath,
+                modelPath: modelPath,
+                recordingPath: recordingArtifact.filePath,
+                outputBasePath: paths.transcriptionOutputBase(for: session.flowID),
+                language: configuredLanguage
+            )
+            let resolvedLanguage = resolveTranscriptionLanguage(
+                rawOutputJSONPath: rawOutputJSONPath,
+                fallbackLanguage: configuredLanguage
+            )
+            let artifact = TranscriptionArtifact(
+                id: session.flowID,
+                recordingID: recordingArtifact.id,
+                recordingFilePath: recordingArtifact.filePath,
+                artifactPath: artifactPath,
+                textFilePath: textFilePath,
+                rawOutputJSONPath: rawOutputJSONPath,
+                cliPath: cliPath,
+                modelPath: modelPath,
+                modelName: URL(fileURLWithPath: modelPath).lastPathComponent,
+                language: resolvedLanguage,
+                status: .succeeded,
+                text: transcriptText,
+                textLength: transcriptText.count,
+                startedAt: startedAt,
+                completedAt: isoTimestamp(),
+                durationMs: max(Int(Date().timeIntervalSince(started) * 1_000.0), 0),
+                error: nil
+            )
+            persistTranscriptionArtifact(artifact)
+            return artifact
+        } catch {
+            let artifact = TranscriptionArtifact(
+                id: session.flowID,
+                recordingID: recordingArtifact.id,
+                recordingFilePath: recordingArtifact.filePath,
+                artifactPath: artifactPath,
+                textFilePath: textFilePath,
+                rawOutputJSONPath: rawOutputJSONPath,
+                cliPath: configuredCLIPath,
+                modelPath: configuredModelPath,
+                modelName: URL(fileURLWithPath: configuredModelPath).lastPathComponent,
+                language: configuredLanguage,
+                status: .failed,
+                text: "",
+                textLength: 0,
+                startedAt: startedAt,
+                completedAt: isoTimestamp(),
+                durationMs: max(Int(Date().timeIntervalSince(started) * 1_000.0), 0),
+                error: "\(error)"
+            )
+            persistTranscriptionArtifact(artifact)
+            return artifact
+        }
+    }
+
+    private func runWhisperCLI(
+        cliPath: String,
+        modelPath: String,
+        recordingPath: String,
+        outputBasePath: String,
+        language: String
+    ) throws -> String {
+        let textOutputPath = "\(outputBasePath).txt"
+        let rawJSONOutputPath = "\(outputBasePath).json"
+        try? FileManager.default.removeItem(atPath: textOutputPath)
+        try? FileManager.default.removeItem(atPath: rawJSONOutputPath)
+
+        var arguments = [
+            "-m", modelPath,
+            "-f", recordingPath,
+            "-nt",
+            "-ng",
+            "-otxt",
+            "-oj",
+            "-of", outputBasePath
+        ]
+        if language != "auto" {
+            arguments.append(contentsOf: ["-l", language])
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: cliPath)
+        process.arguments = arguments
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+        } catch {
+            throw ProductRuntimeError.transcriptionLaunchFailed("\(error)")
+        }
+
+        process.waitUntilExit()
+
+        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let processOutput = ([stdout, stderr].joined(separator: "\n"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard process.terminationStatus == 0 else {
+            let message = processOutput.isEmpty
+                ? "exit status \(process.terminationStatus)"
+                : "exit status \(process.terminationStatus): \(processOutput)"
+            throw ProductRuntimeError.transcriptionProcessFailed(message)
+        }
+
+        guard FileManager.default.fileExists(atPath: textOutputPath) else {
+            throw ProductRuntimeError.missingTranscriptionOutput(textOutputPath)
+        }
+        guard FileManager.default.fileExists(atPath: rawJSONOutputPath) else {
+            throw ProductRuntimeError.missingTranscriptionOutput(rawJSONOutputPath)
+        }
+
+        return try String(contentsOf: URL(fileURLWithPath: textOutputPath), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func resolveTranscriptionLanguage(rawOutputJSONPath: String, fallbackLanguage: String) -> String {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: rawOutputJSONPath)) else {
+            return fallbackLanguage
+        }
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let result = object["result"] as? [String: Any],
+            let language = result["language"] as? String,
+            !language.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return fallbackLanguage
+        }
+        return language
+    }
+
+    private func persistTranscriptionArtifact(_ artifact: TranscriptionArtifact) {
+        do {
+            try writeJSON(artifact, to: artifact.artifactPath)
+        } catch {
+            fputs("Could not persist transcription artifact for \(artifact.id): \(error)\n", stderr)
+        }
+    }
+
     private func makeRecordingArtifact(session: ActiveRecordingSession, measuredDurationMs: Int) throws -> RecordingArtifact {
-        let attributes = try FileManager.default.attributesOfItem(atPath: session.fileURL.path)
-        let fileSizeBytes = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        let details = try inspectRecordingArtifact(at: session.fileURL)
         let artifact = RecordingArtifact(
             id: session.flowID,
             filePath: session.fileURL.path,
             metadataPath: session.metadataURL.path,
-            format: "wav-lpcm-16khz-mono",
-            sampleRateHz: 16_000,
-            channelCount: 1,
-            durationMs: measuredDurationMs,
-            fileSizeBytes: fileSizeBytes,
+            format: details.format,
+            sampleRateHz: details.sampleRateHz,
+            channelCount: details.channelCount,
+            durationMs: details.durationMs > 0 ? details.durationMs : measuredDurationMs,
+            fileSizeBytes: details.fileSizeBytes,
             createdAt: session.startedAtTimestamp
         )
         try writeJSON(artifact, to: session.metadataURL.path)
@@ -1349,6 +1721,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingStartedAt: nil,
             recordingStoppedAt: nil,
             recordingArtifact: nil,
+            transcriptionArtifact: nil,
             transcribingPlaceholder: false,
             error: nil
         )
@@ -1394,6 +1767,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingStartedAt: nil,
             recordingStoppedAt: nil,
             recordingArtifact: nil,
+            transcriptionArtifact: nil,
             transcribingPlaceholder: false,
             error: error
         )
@@ -1416,6 +1790,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         lastBlockedReason = response.blockedReason
         lastError = response.error
         lastRecording = response.recordingArtifact
+        lastTranscription = response.transcriptionArtifact
 
         transitionFlow(
             to: terminalFlowState(for: response),
@@ -1539,6 +1914,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             hotKeyInteractionModel: .pressAndHold,
             activeRecordingID: activeRecordingSession?.flowID,
             lastRecording: lastRecording,
+            lastTranscription: lastTranscription,
             hotKey: hotKeyState,
             flow: flowSnapshot
         )
@@ -1613,6 +1989,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 recordingStartedAt: nil,
                 recordingStoppedAt: nil,
                 recordingArtifact: nil,
+                transcriptionArtifact: nil,
                 transcribingPlaceholder: false,
                 error: "\(error)"
             )
@@ -1661,6 +2038,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingStartedAt: nil,
             recordingStoppedAt: nil,
             recordingArtifact: nil,
+            transcriptionArtifact: nil,
             transcribingPlaceholder: false,
             error: nil
         )
@@ -1753,6 +2131,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 recordingStartedAt: nil,
                 recordingStoppedAt: nil,
                 recordingArtifact: nil,
+                transcriptionArtifact: nil,
                 transcribingPlaceholder: false,
                 error: nil
             )
@@ -1809,6 +2188,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 recordingStartedAt: nil,
                 recordingStoppedAt: nil,
                 recordingArtifact: nil,
+                transcriptionArtifact: nil,
                 transcribingPlaceholder: false,
                 error: "\(error)"
             )
@@ -1854,6 +2234,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingStartedAt: nil,
             recordingStoppedAt: nil,
             recordingArtifact: nil,
+            transcriptionArtifact: nil,
             transcribingPlaceholder: false,
             error: nil
         )
@@ -1896,6 +2277,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingStartedAt: nil,
             recordingStoppedAt: nil,
             recordingArtifact: nil,
+            transcriptionArtifact: nil,
             transcribingPlaceholder: false,
             error: nil
         )
@@ -1925,6 +2307,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         lastError = response.error
         if let recordingArtifact = response.recordingArtifact {
             lastRecording = recordingArtifact
+        }
+        if let transcriptionArtifact = response.transcriptionArtifact {
+            lastTranscription = transcriptionArtifact
         }
 
         if response.kind == .shutdown {

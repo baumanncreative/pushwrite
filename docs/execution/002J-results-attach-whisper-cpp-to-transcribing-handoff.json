@@ -1,0 +1,133 @@
+{
+  "timestamp": "2026-04-12T15:32:10Z",
+  "taskId": "002J",
+  "stableBundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+  "codeChanges": [
+    "/Users/michel/Code/pushwrite/app/macos/PushWrite/main.swift",
+    "/Users/michel/Code/pushwrite/scripts/control_pushwrite_product.swift",
+    "/Users/michel/Code/pushwrite/scripts/run_pushwrite_recording_validation.swift",
+    "/Users/michel/Code/pushwrite/scripts/build_whispercpp_minimal.sh"
+  ],
+  "localArtifacts": {
+    "whisperSourceDir": "/Users/michel/Code/pushwrite/third_party/whisper.cpp",
+    "whisperCLIPath": "/Users/michel/Code/pushwrite/build/whispercpp/build/bin/whisper-cli",
+    "modelPath": "/Users/michel/Code/pushwrite/models/ggml-tiny.bin",
+    "modelSizeBytes": 77691713,
+    "modelSHA256": "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+    "validationFixtureWAV": "/Users/michel/Code/pushwrite/build/whispercpp/micro-machines-16k-mono.wav"
+  },
+  "implementation": {
+    "transcribingStep": {
+      "entryState": "transcribing",
+      "workerQueueExecution": true,
+      "recordingArtifactPathPattern": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-*/recordings/<flow-id>.wav",
+      "transcriptionArtifactPathPattern": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-*/recordings/<flow-id>.transcription.artifact.json",
+      "rawOutputTextPattern": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-*/recordings/<flow-id>.transcription.txt",
+      "rawOutputJSONPattern": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-*/recordings/<flow-id>.transcription.json"
+    },
+    "whisperInvocation": {
+      "binary": "whisper-cli",
+      "arguments": [
+        "-m <model>",
+        "-f <recording.wav>",
+        "-nt",
+        "-ng",
+        "-otxt",
+        "-oj",
+        "-of <runtime/.../recordings/<flow-id>.transcription>"
+      ],
+      "directWAVCompatibility": true,
+      "requiredPreConversion": false
+    },
+    "runtimeStateExtension": {
+      "responseAdds": [
+        "transcriptionArtifact",
+        "textLength"
+      ],
+      "stateAdds": [
+        "lastTranscription"
+      ]
+    }
+  },
+  "validation": {
+    "summaryFile": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002j-transcription-summary.json",
+    "success": {
+      "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002j-transcription-success",
+      "flowStates": [
+        "triggered",
+        "recording",
+        "transcribing",
+        "done"
+      ],
+      "responseId": "6BE64EA0-93EE-4F8B-B75D-BA0B915265D5",
+      "recordingDurationMs": 29888,
+      "textLength": 933,
+      "language": "en",
+      "transcriptionDurationMs": 1351,
+      "status": "succeeded"
+    },
+    "inferenceFailure": {
+      "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002j-transcription-inference-failure",
+      "flowStates": [
+        "triggered",
+        "recording",
+        "transcribing",
+        "error"
+      ],
+      "responseId": "400EC8C5-D72B-4DD8-AB3C-394E74E17AC8",
+      "status": "failed",
+      "error": "whisper.cpp model is missing at /Users/michel/Code/pushwrite/models/ggml-tiny-missing-002j.bin."
+    },
+    "blockedAccessibility": {
+      "flowStates": [
+        "triggered",
+        "blocked"
+      ],
+      "status": "blocked"
+    },
+    "microphoneDenied": {
+      "flowStates": [
+        "triggered",
+        "blocked"
+      ],
+      "status": "blocked"
+    },
+    "noMicrophone": {
+      "flowStates": [
+        "triggered",
+        "error"
+      ],
+      "status": "failed"
+    }
+  },
+  "observations": {
+    "directWAVWorks": true,
+    "extraConversionNeeded": false,
+    "productFlowProducesRealText": true,
+    "inferenceErrorsPersistedInStateAndLogs": true,
+    "validatorUsesFixtureOverrideForDeterministicSuccess": true
+  },
+  "openRisks": [
+    "The automated success path uses a validator-only fixture copy into the runtime recording artifact so the product validation stays deterministic.",
+    "The chosen ggml-tiny model was downloaded from an alternative mirror because the usual upstream download path was not reachable in this environment.",
+    "Too-short or silent recordings still have no dedicated gating policy before the later insert step."
+  ],
+  "mvpAssessment": {
+    "classification": "viable_with_small_remaining_hardening",
+    "rationale": [
+      "The existing runtime WAV artifact is directly consumable by whisper.cpp.",
+      "The transcribing handoff now performs real local inference and produces a text result.",
+      "Blocked, no-permission, no-mic and inference-failure paths remain separated in the same runtime artifacts."
+    ]
+  },
+  "followUpTask": {
+    "id": "002K",
+    "title": "Connect the done-path transcription result to the existing insert path",
+    "scope": [
+      "Use transcriptionArtifact.text as the hotkey flow payload for the current insert mechanism.",
+      "Add a small gate for empty or too-short transcription results.",
+      "Keep runtime state and error artifacts unchanged for done, blocked and error transitions.",
+      "Revalidate success insert, empty/too-short gating, and accessibility blocked without widening scope."
+    ]
+  }
+}

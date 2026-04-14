@@ -36,6 +36,10 @@ struct Options {
     let runtimeDir: String
     let text: String?
     let simulatedText: String?
+    let whisperCLIPath: String?
+    let whisperModelPath: String?
+    let whisperLanguage: String?
+    let transcriptionFixtureWAV: String?
     let restoreClipboard: Bool
     let promptAccessibility: Bool
     let forceAccessibilityBlocked: Bool
@@ -102,6 +106,31 @@ struct RecordingArtifact: Codable {
     let createdAt: String
 }
 
+enum TranscriptionStatus: String, Codable {
+    case succeeded
+    case failed
+}
+
+struct TranscriptionArtifact: Codable {
+    let id: String
+    let recordingID: String
+    let recordingFilePath: String
+    let artifactPath: String
+    let textFilePath: String
+    let rawOutputJSONPath: String
+    let cliPath: String
+    let modelPath: String
+    let modelName: String
+    let language: String
+    let status: TranscriptionStatus
+    let text: String
+    let textLength: Int
+    let startedAt: String
+    let completedAt: String
+    let durationMs: Int
+    let error: String?
+}
+
 struct ProductState: Codable {
     let timestamp: String
     let runtimeDir: String
@@ -121,6 +150,7 @@ struct ProductState: Codable {
     let hotKeyInteractionModel: HotKeyInteractionModel
     let activeRecordingID: String?
     let lastRecording: RecordingArtifact?
+    let lastTranscription: TranscriptionArtifact?
     let hotKey: HotKeyStateSnapshot?
     let flow: ProductFlowSnapshot?
 }
@@ -158,6 +188,7 @@ struct ProductResponse: Codable {
     let recordingStartedAt: String?
     let recordingStoppedAt: String?
     let recordingArtifact: RecordingArtifact?
+    let transcriptionArtifact: TranscriptionArtifact?
     let transcribingPlaceholder: Bool
     let error: String?
 }
@@ -237,6 +268,10 @@ func parseOptions(arguments: [String]) throws -> Options {
     var runtimeDir = ProcessInfo.processInfo.environment["PUSHWRITE_PRODUCT_RUNTIME_DIR"] ?? ""
     var text: String?
     var simulatedText = ProcessInfo.processInfo.environment["PUSHWRITE_SIMULATED_TRANSCRIPTION_TEXT"]
+    var whisperCLIPath = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_CLI_PATH"]
+    var whisperModelPath = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_MODEL_PATH"]
+    var whisperLanguage = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_LANGUAGE"]
+    var transcriptionFixtureWAV = ProcessInfo.processInfo.environment["PUSHWRITE_TRANSCRIPTION_FIXTURE_WAV"]
     var restoreClipboard = false
     var promptAccessibility = false
     var forceAccessibilityBlocked = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_BLOCKED"] == "1"
@@ -285,6 +320,14 @@ func parseOptions(arguments: [String]) throws -> Options {
             text = try requireValue(for: argument)
         case "--simulated-text":
             simulatedText = try requireValue(for: argument)
+        case "--whisper-cli-path":
+            whisperCLIPath = try requireValue(for: argument)
+        case "--whisper-model-path":
+            whisperModelPath = try requireValue(for: argument)
+        case "--whisper-language":
+            whisperLanguage = try requireValue(for: argument)
+        case "--transcription-fixture-wav":
+            transcriptionFixtureWAV = try requireValue(for: argument)
         case "--restore-clipboard":
             restoreClipboard = true
         case "--prompt-accessibility":
@@ -328,6 +371,10 @@ func parseOptions(arguments: [String]) throws -> Options {
         runtimeDir: runtimeDir,
         text: text,
         simulatedText: simulatedText,
+        whisperCLIPath: whisperCLIPath,
+        whisperModelPath: whisperModelPath,
+        whisperLanguage: whisperLanguage,
+        transcriptionFixtureWAV: transcriptionFixtureWAV,
         restoreClipboard: restoreClipboard,
         promptAccessibility: promptAccessibility,
         forceAccessibilityBlocked: forceAccessibilityBlocked,
@@ -396,6 +443,7 @@ func readState(from runtimeDir: String) -> ProductState? {
             hotKeyInteractionModel: state.hotKeyInteractionModel,
             activeRecordingID: nil,
             lastRecording: state.lastRecording,
+            lastTranscription: state.lastTranscription,
             hotKey: state.hotKey,
             flow: state.flow
         )
@@ -452,6 +500,18 @@ func launchProduct(options: Options) throws -> ProductState {
     var arguments = ["--runtime-dir", options.runtimeDir]
     if let simulatedText = options.simulatedText, !simulatedText.isEmpty {
         arguments.append(contentsOf: ["--simulated-transcription-text", simulatedText])
+    }
+    if let whisperCLIPath = options.whisperCLIPath, !whisperCLIPath.isEmpty {
+        arguments.append(contentsOf: ["--whisper-cli-path", whisperCLIPath])
+    }
+    if let whisperModelPath = options.whisperModelPath, !whisperModelPath.isEmpty {
+        arguments.append(contentsOf: ["--whisper-model-path", whisperModelPath])
+    }
+    if let whisperLanguage = options.whisperLanguage, !whisperLanguage.isEmpty {
+        arguments.append(contentsOf: ["--whisper-language", whisperLanguage])
+    }
+    if let transcriptionFixtureWAV = options.transcriptionFixtureWAV, !transcriptionFixtureWAV.isEmpty {
+        arguments.append(contentsOf: ["--transcription-fixture-wav", transcriptionFixtureWAV])
     }
     if options.forceAccessibilityBlocked {
         arguments.append("--force-accessibility-blocked")
@@ -558,6 +618,7 @@ do {
                 hotKeyInteractionModel: .pressAndHold,
                 activeRecordingID: nil,
                 lastRecording: nil,
+                lastTranscription: nil,
                 hotKey: nil,
                 flow: nil
             )
