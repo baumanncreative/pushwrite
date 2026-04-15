@@ -40,6 +40,10 @@ enum TranscriptionInsertGate: String, Codable {
     case tooShort
 }
 
+enum GatedTranscriptionFeedback: String, Codable {
+    case systemBeep
+}
+
 struct HotKeyStateSnapshot: Codable {
     let descriptor: String
     let keyCode: UInt32
@@ -55,6 +59,7 @@ struct ProductFlowSnapshot: Codable {
     let timestamp: String
     let textLength: Int
     let transcriptionInsertGate: TranscriptionInsertGate?
+    let gatedTranscriptionFeedback: GatedTranscriptionFeedback?
     let blockedReason: String?
     let error: String?
     let recordingDurationMs: Int?
@@ -107,6 +112,7 @@ struct ProductState: Codable {
     let lastRequestID: String?
     let lastResponseStatus: String?
     let lastTranscriptionInsertGate: TranscriptionInsertGate?
+    let lastGatedTranscriptionFeedback: GatedTranscriptionFeedback?
     let lastBlockedReason: String?
     let lastError: String?
     let microphonePermissionStatus: MicrophonePermissionStatus
@@ -155,6 +161,7 @@ struct ProductResponse: Codable {
     let restoreDelayMs: UInt32
     let textLength: Int
     let transcriptionInsertGate: TranscriptionInsertGate?
+    let gatedTranscriptionFeedback: GatedTranscriptionFeedback?
     let hotKeyInteractionModel: String?
     let insertRoute: String?
     let insertSource: String?
@@ -811,6 +818,9 @@ func runSuccessScenario(
     if response.transcriptionInsertGate != .passed {
         failureReasons.append("unexpected-transcription-insert-gate")
     }
+    if response.gatedTranscriptionFeedback != nil {
+        failureReasons.append("unexpected-gated-feedback")
+    }
     if response.insertRoute != "pasteboardCommandV" {
         failureReasons.append("unexpected-insert-route")
     }
@@ -870,8 +880,14 @@ func runSuccessScenario(
     if observation.finalState?.flow.transcriptionInsertGate != .passed {
         failureReasons.append("unexpected-final-flow-gate")
     }
+    if observation.finalState?.flow.gatedTranscriptionFeedback != nil {
+        failureReasons.append("unexpected-final-flow-feedback")
+    }
     if observation.finalState?.lastTranscriptionInsertGate != .passed {
         failureReasons.append("unexpected-last-gate")
+    }
+    if observation.finalState?.lastGatedTranscriptionFeedback != nil {
+        failureReasons.append("unexpected-last-feedback")
     }
 
     return ScenarioSummary(
@@ -928,6 +944,9 @@ func runGatedScenario(
     }
     if response.transcriptionInsertGate != expectedGate {
         failureReasons.append("unexpected-transcription-insert-gate")
+    }
+    if response.gatedTranscriptionFeedback != .systemBeep {
+        failureReasons.append("missing-gated-feedback")
     }
     if response.insertSource != "transcription" {
         failureReasons.append("unexpected-insert-source")
@@ -987,8 +1006,14 @@ func runGatedScenario(
     if observation.finalState?.flow.transcriptionInsertGate != expectedGate {
         failureReasons.append("unexpected-final-flow-gate")
     }
+    if observation.finalState?.flow.gatedTranscriptionFeedback != .systemBeep {
+        failureReasons.append("unexpected-final-flow-feedback")
+    }
     if observation.finalState?.lastTranscriptionInsertGate != expectedGate {
         failureReasons.append("unexpected-last-gate")
+    }
+    if observation.finalState?.lastGatedTranscriptionFeedback != .systemBeep {
+        failureReasons.append("unexpected-last-feedback")
     }
 
     return ScenarioSummary(
@@ -1002,7 +1027,10 @@ func runGatedScenario(
         frontmostBundleAfterTrigger: observation.frontmostBundleAfterTrigger,
         success: failureReasons.isEmpty,
         failureReasons: failureReasons,
-        notes: ["fake_whisper_cli=\(fakeCLIPath)"]
+        notes: [
+            "fake_whisper_cli=\(fakeCLIPath)",
+            "gated_transcription_feedback=systemBeep"
+        ]
     )
 }
 
@@ -1041,6 +1069,9 @@ func runBlockedScenario(
     }
     if response.transcriptionInsertGate != nil {
         failureReasons.append("unexpected-transcription-insert-gate")
+    }
+    if response.gatedTranscriptionFeedback != nil {
+        failureReasons.append("unexpected-gated-feedback")
     }
     if response.syntheticPastePosted {
         failureReasons.append("synthetic-paste-posted")
@@ -1109,6 +1140,9 @@ func runInferenceFailureScenario(
     }
     if response.transcriptionInsertGate != nil {
         failureReasons.append("unexpected-transcription-insert-gate")
+    }
+    if response.gatedTranscriptionFeedback != nil {
+        failureReasons.append("unexpected-gated-feedback")
     }
     if response.error?.contains("whisper.cpp model is missing") != true {
         failureReasons.append("unexpected-error")

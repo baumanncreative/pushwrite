@@ -89,6 +89,7 @@ struct ProductFlowSnapshot: Codable {
     let timestamp: String
     let textLength: Int
     let transcriptionInsertGate: String?
+    let gatedTranscriptionFeedback: GatedTranscriptionFeedback?
     let blockedReason: String?
     let error: String?
     let recordingDurationMs: Int?
@@ -116,6 +117,10 @@ enum TranscriptionInsertGate: String, Codable {
     case passed
     case empty
     case tooShort
+}
+
+enum GatedTranscriptionFeedback: String, Codable {
+    case systemBeep
 }
 
 struct TranscriptionArtifact: Codable {
@@ -152,6 +157,7 @@ struct ProductState: Codable {
     let lastRequestID: String?
     let lastResponseStatus: ProductResponseStatus?
     let lastTranscriptionInsertGate: TranscriptionInsertGate?
+    let lastGatedTranscriptionFeedback: GatedTranscriptionFeedback?
     let lastBlockedReason: String?
     let lastError: String?
     let microphonePermissionStatus: MicrophonePermissionStatus
@@ -181,6 +187,7 @@ struct ProductResponse: Codable {
     let restoreDelayMs: UInt32
     let textLength: Int
     let transcriptionInsertGate: TranscriptionInsertGate?
+    let gatedTranscriptionFeedback: GatedTranscriptionFeedback?
     let hotKeyInteractionModel: HotKeyInteractionModel?
     let insertRoute: String?
     let insertSource: String?
@@ -446,6 +453,8 @@ func readState(from runtimeDir: String) -> ProductState? {
             isProcessing: false,
             lastRequestID: state.lastRequestID,
             lastResponseStatus: state.lastResponseStatus,
+            lastTranscriptionInsertGate: state.lastTranscriptionInsertGate,
+            lastGatedTranscriptionFeedback: state.lastGatedTranscriptionFeedback,
             lastBlockedReason: state.lastBlockedReason,
             lastError: state.lastError,
             microphonePermissionStatus: state.microphonePermissionStatus,
@@ -621,6 +630,8 @@ do {
                 isProcessing: false,
                 lastRequestID: nil,
                 lastResponseStatus: nil,
+                lastTranscriptionInsertGate: nil,
+                lastGatedTranscriptionFeedback: nil,
                 lastBlockedReason: nil,
                 lastError: nil,
                 microphonePermissionStatus: .notDetermined,

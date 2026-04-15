@@ -138,6 +138,7 @@ struct ProductFlowSnapshot: Codable {
     let timestamp: String
     let textLength: Int
     let transcriptionInsertGate: TranscriptionInsertGate?
+    let gatedTranscriptionFeedback: GatedTranscriptionFeedback?
     let blockedReason: String?
     let error: String?
     let recordingDurationMs: Int?
@@ -151,6 +152,7 @@ struct ProductFlowEvent: Codable {
     let timestamp: String
     let textLength: Int
     let transcriptionInsertGate: TranscriptionInsertGate?
+    let gatedTranscriptionFeedback: GatedTranscriptionFeedback?
     let blockedReason: String?
     let error: String?
     let recordingDurationMs: Int?
@@ -178,6 +180,10 @@ enum TranscriptionInsertGate: String, Codable {
     case passed
     case empty
     case tooShort
+}
+
+enum GatedTranscriptionFeedback: String, Codable {
+    case systemBeep
 }
 
 struct TranscriptionArtifact: Codable {
@@ -229,6 +235,7 @@ struct ProductResponse: Codable {
     let restoreDelayMs: UInt32
     let textLength: Int
     let transcriptionInsertGate: TranscriptionInsertGate?
+    let gatedTranscriptionFeedback: GatedTranscriptionFeedback?
     let hotKeyInteractionModel: HotKeyInteractionModel?
     let insertRoute: InsertRoute?
     let insertSource: InsertSource?
@@ -264,6 +271,7 @@ struct ProductState: Codable {
     let lastRequestID: String?
     let lastResponseStatus: ProductResponseStatus?
     let lastTranscriptionInsertGate: TranscriptionInsertGate?
+    let lastGatedTranscriptionFeedback: GatedTranscriptionFeedback?
     let lastBlockedReason: String?
     let lastError: String?
     let microphonePermissionStatus: MicrophonePermissionStatus
@@ -985,6 +993,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private var lastRequestID: String?
     private var lastResponseStatus: ProductResponseStatus?
     private var lastTranscriptionInsertGate: TranscriptionInsertGate?
+    private var lastGatedTranscriptionFeedback: GatedTranscriptionFeedback?
     private var lastBlockedReason: String?
     private var lastError: String?
     private var lastRecording: RecordingArtifact?
@@ -1019,6 +1028,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             timestamp: isoTimestamp(),
             textLength: 0,
             transcriptionInsertGate: nil,
+            gatedTranscriptionFeedback: nil,
             blockedReason: nil,
             error: nil,
             recordingDurationMs: nil,
@@ -1443,6 +1453,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                     restoreDelayMs: defaults.restore,
                     textLength: transcriptionArtifact.textLength,
                     transcriptionInsertGate: nil,
+                    gatedTranscriptionFeedback: nil,
                     hotKeyInteractionModel: .pressAndHold,
                     insertRoute: nil,
                     insertSource: nil,
@@ -1467,6 +1478,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
             let insertGate = transcriptionInsertGate(for: transcriptionArtifact.text)
             guard insertGate == .passed else {
+                let gatedTranscriptionFeedback = emitGatedTranscriptionFeedback(for: insertGate)
                 return makeGatedHotKeyTranscriptionResponse(
                     session: session,
                     recordingStoppedAt: recordingStoppedAt,
@@ -1474,7 +1486,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                     focusAtStop: focusAtStop,
                     recordingArtifact: artifact,
                     transcriptionArtifact: transcriptionArtifact,
-                    transcriptionInsertGate: insertGate
+                    transcriptionInsertGate: insertGate,
+                    gatedTranscriptionFeedback: gatedTranscriptionFeedback
                 )
             }
 
@@ -1522,6 +1535,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreDelayMs: defaults.restore,
                 textLength: 0,
                 transcriptionInsertGate: nil,
+                gatedTranscriptionFeedback: nil,
                 hotKeyInteractionModel: .pressAndHold,
                 insertRoute: nil,
                 insertSource: nil,
@@ -1557,6 +1571,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 trigger: .globalHotKey,
                 textLength: transcriptionArtifact.textLength,
                 transcriptionInsertGate: .passed,
+                gatedTranscriptionFeedback: nil,
                 recordingDurationMs: recordingArtifact.durationMs,
                 recordingFilePath: recordingArtifact.filePath
             )
@@ -1567,6 +1582,25 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         } else {
             DispatchQueue.main.sync(execute: update)
         }
+    }
+
+    @discardableResult
+    private func emitGatedTranscriptionFeedback(for gate: TranscriptionInsertGate) -> GatedTranscriptionFeedback? {
+        guard gate == .empty || gate == .tooShort else {
+            return nil
+        }
+
+        let emitFeedback = {
+            NSSound.beep()
+        }
+
+        if Thread.isMainThread {
+            emitFeedback()
+        } else {
+            DispatchQueue.main.async(execute: emitFeedback)
+        }
+
+        return .systemBeep
     }
 
     private func makeCompletedHotKeyInsertResponse(
@@ -1596,6 +1630,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreDelayMs: insertResponse.restoreDelayMs,
             textLength: transcriptionArtifact.textLength,
             transcriptionInsertGate: transcriptionInsertGate,
+            gatedTranscriptionFeedback: nil,
             hotKeyInteractionModel: .pressAndHold,
             insertRoute: insertResponse.insertRoute,
             insertSource: insertResponse.insertSource,
@@ -1625,7 +1660,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         focusAtStop: FocusSnapshot?,
         recordingArtifact: RecordingArtifact,
         transcriptionArtifact: TranscriptionArtifact,
-        transcriptionInsertGate: TranscriptionInsertGate
+        transcriptionInsertGate: TranscriptionInsertGate,
+        gatedTranscriptionFeedback: GatedTranscriptionFeedback?
     ) -> ProductResponse {
         ProductResponse(
             id: session.flowID,
@@ -1645,6 +1681,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreDelayMs: defaults.restore,
             textLength: transcriptionArtifact.textLength,
             transcriptionInsertGate: transcriptionInsertGate,
+            gatedTranscriptionFeedback: gatedTranscriptionFeedback,
             hotKeyInteractionModel: .pressAndHold,
             insertRoute: nil,
             insertSource: .transcription,
@@ -1892,6 +1929,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreDelayMs: defaults.restore,
             textLength: 0,
             transcriptionInsertGate: nil,
+            gatedTranscriptionFeedback: nil,
             hotKeyInteractionModel: .pressAndHold,
             insertRoute: nil,
             insertSource: nil,
@@ -1939,6 +1977,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreDelayMs: defaults.restore,
             textLength: 0,
             transcriptionInsertGate: nil,
+            gatedTranscriptionFeedback: nil,
             hotKeyInteractionModel: .pressAndHold,
             insertRoute: nil,
             insertSource: nil,
@@ -1976,6 +2015,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         lastRequestID = response.id
         lastResponseStatus = response.status
         lastTranscriptionInsertGate = response.transcriptionInsertGate
+        lastGatedTranscriptionFeedback = response.gatedTranscriptionFeedback
         lastBlockedReason = response.blockedReason
         lastError = response.error
         lastRecording = response.recordingArtifact
@@ -1987,6 +2027,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             trigger: .globalHotKey,
             textLength: response.textLength,
             transcriptionInsertGate: response.transcriptionInsertGate,
+            gatedTranscriptionFeedback: response.gatedTranscriptionFeedback,
             blockedReason: response.blockedReason,
             error: response.error,
             recordingDurationMs: response.recordingArtifact?.durationMs,
@@ -2015,6 +2056,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         trigger: FlowTriggerSource? = nil,
         textLength: Int = 0,
         transcriptionInsertGate: TranscriptionInsertGate? = nil,
+        gatedTranscriptionFeedback: GatedTranscriptionFeedback? = nil,
         blockedReason: String? = nil,
         error: String? = nil,
         recordingDurationMs: Int? = nil,
@@ -2027,6 +2069,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             timestamp: isoTimestamp(),
             textLength: textLength,
             transcriptionInsertGate: transcriptionInsertGate,
+            gatedTranscriptionFeedback: gatedTranscriptionFeedback,
             blockedReason: blockedReason,
             error: error,
             recordingDurationMs: recordingDurationMs,
@@ -2042,6 +2085,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 timestamp: snapshot.timestamp,
                 textLength: textLength,
                 transcriptionInsertGate: transcriptionInsertGate,
+                gatedTranscriptionFeedback: gatedTranscriptionFeedback,
                 blockedReason: blockedReason,
                 error: error,
                 recordingDurationMs: recordingDurationMs,
@@ -2102,6 +2146,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             lastRequestID: lastRequestID,
             lastResponseStatus: lastResponseStatus,
             lastTranscriptionInsertGate: lastTranscriptionInsertGate,
+            lastGatedTranscriptionFeedback: lastGatedTranscriptionFeedback,
             lastBlockedReason: lastBlockedReason,
             lastError: lastError,
             microphonePermissionStatus: currentMicrophonePermissionStatus(),
@@ -2168,6 +2213,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreDelayMs: defaults.restore,
                 textLength: 0,
                 transcriptionInsertGate: nil,
+                gatedTranscriptionFeedback: nil,
                 hotKeyInteractionModel: nil,
                 insertRoute: nil,
                 insertSource: nil,
@@ -2218,6 +2264,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreDelayMs: request.restoreDelayMs ?? defaults.restore,
             textLength: request.text?.count ?? 0,
             transcriptionInsertGate: nil,
+            gatedTranscriptionFeedback: nil,
             hotKeyInteractionModel: .pressAndHold,
             insertRoute: nil,
             insertSource: nil,
@@ -2312,6 +2359,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreDelayMs: restoreDelayMs,
                 textLength: text?.count ?? 0,
                 transcriptionInsertGate: nil,
+                gatedTranscriptionFeedback: nil,
                 hotKeyInteractionModel: nil,
                 insertRoute: .pasteboardCommandV,
                 insertSource: source,
@@ -2370,6 +2418,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 restoreDelayMs: restoreDelayMs,
                 textLength: text.count,
                 transcriptionInsertGate: nil,
+                gatedTranscriptionFeedback: nil,
                 hotKeyInteractionModel: nil,
                 insertRoute: .pasteboardCommandV,
                 insertSource: source,
@@ -2417,6 +2466,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreDelayMs: restoreDelayMs,
             textLength: text.count,
             transcriptionInsertGate: nil,
+            gatedTranscriptionFeedback: nil,
             hotKeyInteractionModel: nil,
             insertRoute: .pasteboardCommandV,
             insertSource: source,
@@ -2461,6 +2511,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             restoreDelayMs: request.restoreDelayMs ?? defaults.restore,
             textLength: 0,
             transcriptionInsertGate: nil,
+            gatedTranscriptionFeedback: nil,
             hotKeyInteractionModel: nil,
             insertRoute: nil,
             insertSource: nil,
@@ -2504,6 +2555,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         lastRequestID = response.id
         lastResponseStatus = response.status
         lastTranscriptionInsertGate = response.transcriptionInsertGate
+        lastGatedTranscriptionFeedback = response.gatedTranscriptionFeedback
         lastBlockedReason = response.blockedReason
         lastError = response.error
         if let recordingArtifact = response.recordingArtifact {
