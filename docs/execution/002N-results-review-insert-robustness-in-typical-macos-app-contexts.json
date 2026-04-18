@@ -1,0 +1,123 @@
+{
+  "taskID": "002N",
+  "title": "Review insert robustness in typical macOS app contexts",
+  "timestamp": "2026-04-18T07:25:40Z",
+  "decision": {
+    "outcome": "documentation_sufficient_for_now",
+    "technicalFollowUpOnInsertPathRequired": false,
+    "recommendedNextStep": "Close 002N as an insert-path observation task and document the current launch/validator issue separately as harness scope, not as an insert defect."
+  },
+  "scope": {
+    "insertPathModified": false,
+    "newInsertMethodIntroduced": false,
+    "newTestArchitectureIntroduced": false,
+    "thirdPartyAppIncluded": false,
+    "thirdPartyAppOmissionReason": "The required decision is already supported by TextEdit and Safari observations, and a current launch/validator harness issue was observed during 002N. Adding a third-party app would have increased the risk of mixing product-path and automation-path findings."
+  },
+  "harnessObservations": [
+    {
+      "name": "hotkey_validator_launch_timeout",
+      "category": "E",
+      "categoryLabel": "Test-Harness-/Automation-Problem",
+      "date": "2026-04-18",
+      "command": "./scripts/run_pushwrite_hotkey_validation.sh --textedit-runs 3 --safari-runs 3 --product-output-dir build/pushwrite-product --success-runtime-dir build/pushwrite-product/runtime-002n-success --blocked-runtime-dir build/pushwrite-product/runtime-002n-blocked --results-file build/pushwrite-product/runtime-002n-summary.json",
+      "observation": "The validator aborted before context validation with 'Product launch failed: Timed out: Condition not met within 20.0 seconds.'",
+      "separateCounterObservation": {
+        "command": "./scripts/control_pushwrite_product.sh launch --product-app build/pushwrite-product/PushWrite.app --runtime-dir build/pushwrite-product/runtime-002n-launch-check --timeout-ms 30000",
+        "artifact": "build/pushwrite-product/runtime-002n-launch-check/product-state.json",
+        "result": "Direct product launch succeeded immediately on the same product bundle."
+      },
+      "assessment": "This blocks the validator launch path, not the insert path itself."
+    }
+  ],
+  "contexts": [
+    {
+      "name": "TextEdit",
+      "required": true,
+      "testable": true,
+      "primaryCategory": "A",
+      "primaryCategoryLabel": "Produktpfad funktioniert",
+      "evidence": {
+        "mainRunArtifact": "build/pushwrite-product/runtime-002n-product-validation-summary.json",
+        "rerunArtifact": "build/pushwrite-product/runtime-002n-textedit-rerun-summary.json",
+        "mainRun": {
+          "runs": 3,
+          "productStatusSucceeded": 3,
+          "observedTargetValueMatches": 2
+        },
+        "rerun": {
+          "runs": 5,
+          "productStatusSucceeded": 5,
+          "observedTargetValueMatches": 5,
+          "focusReceiptTargetCount": 5,
+          "focusBeforeTargetCount": 5,
+          "focusAfterTargetCount": 5,
+          "productFrontmostCounts": {
+            "atReceipt": 0,
+            "beforePaste": 0,
+            "afterPaste": 0
+          }
+        },
+        "clipboardRestore": {
+          "plain": true,
+          "rich": true
+        }
+      },
+      "supplementalHarnessFinding": {
+        "category": "E",
+        "categoryLabel": "Test-Harness-/Automation-Problem",
+        "observation": "One mixed-run outlier had focusAtReceipt/focusBeforePaste/focusAfterPaste on Codex, with target-value mismatch.",
+        "assessment": "The outlier is more plausibly explained by focus drift in the test channel than by an insert-path defect because the immediate TextEdit rerun was 5/5 green."
+      },
+      "answers": {
+        "canBeTestedMeaningfully": true,
+        "insertPathWorksObservably": true,
+        "ifNotWhereProblemLikelySits": "A single outlier in the mixed run points to the harness, not the product path.",
+        "whatBlocksConfidenceIfUnclear": null,
+        "documentationVsTechnicalFollowUp": "Documentation is sufficient for this context."
+      }
+    },
+    {
+      "name": "Safari textarea",
+      "required": true,
+      "testable": true,
+      "primaryCategory": "A",
+      "primaryCategoryLabel": "Produktpfad funktioniert",
+      "evidence": {
+        "artifact": "build/pushwrite-product/runtime-002n-product-validation-summary.json",
+        "runs": 3,
+        "productStatusSucceeded": 3,
+        "observedTargetValueMatches": 3,
+        "focusReceiptTargetCount": 3,
+        "focusBeforeTargetCount": 3,
+        "focusAfterTargetCount": 3,
+        "productFrontmostCounts": {
+          "atReceipt": 0,
+          "beforePaste": 0,
+          "afterPaste": 0
+        },
+        "focusAfterPasteRole": "AXTextArea"
+      },
+      "answers": {
+        "canBeTestedMeaningfully": true,
+        "insertPathWorksObservably": true,
+        "ifNotWhereProblemLikelySits": null,
+        "whatBlocksConfidenceIfUnclear": "The statement is intentionally scoped to the local Safari textarea fixture, not arbitrary web applications.",
+        "documentationVsTechnicalFollowUp": "Documentation is sufficient for this required context."
+      }
+    }
+  ],
+  "overallAssessment": {
+    "productPathStatusInRequiredContexts": "functional",
+    "dominantRemainingRiskType": "test_harness",
+    "summary": "The existing insert path is confirmed as functional in TextEdit and Safari textarea. The current red signal observed during 002N sits in the validator launch path, not in text injection itself."
+  },
+  "artifacts": [
+    "docs/execution/002N-results-review-insert-robustness-in-typical-macos-app-contexts.md",
+    "docs/execution/002N-results-review-insert-robustness-in-typical-macos-app-contexts.json",
+    "build/pushwrite-product/runtime-002n-launch-check/product-state.json",
+    "build/pushwrite-product/runtime-002n-product-validation-summary.json",
+    "build/pushwrite-product/runtime-002n-product-validation/logs/events.jsonl",
+    "build/pushwrite-product/runtime-002n-textedit-rerun-summary.json"
+  ]
+}
