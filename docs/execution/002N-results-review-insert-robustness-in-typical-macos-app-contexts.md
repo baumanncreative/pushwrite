@@ -242,18 +242,16 @@ Beobachtet in 002N:
    - der Zielkontext war beim Request nicht stabil TextEdit
    - damit ebenfalls keine belastbare Produktaussage gegen den Insert-Pfad
 
-## 6. Gesamtbewertung
+## Gesamtbewertung
 
-### Entscheidung
+Im enger geschnittenen 002N-Baseline-Scope ist der bestehende PushWrite-Insert-Pfad fuer die Pflichtkontexte TextEdit und Safari-Textarea beobachtbar tragfaehig.
 
-**Dokumentation reicht vorerst.**
+Der aktuell verbleibende rote Befund ist in diesem Lauf dem Launch-/Validator-/Automation-Harness zuzuordnen, nicht belastbar dem bestehenden Insert-Pfad.
 
-### Begruendung
+Auf Basis dieses Baseline-Laufs ist deshalb derzeit **kein technischer Nachschnitt am bestehenden Insert-Pfad begruendbar**.
 
-- beide Pflichtkontexte haben einen beobachtbar funktionierenden Produktpfad
-- der einzige aktuelle rote Befund betrifft den Validator-/Launch-Harness, nicht die Textinjektion selbst
-- die 002N-Frage zielte auf Robustheit des bestehenden Insert-Pfads, nicht auf einen Umbau der Testarchitektur
-- es gibt auf Basis dieses Laufs keinen belastbaren Hinweis, dass der bestehende Insert-Pfad fuer die Pflichtkontexte technisch nachgeschnitten werden muss
+Wichtig:
+Diese Aussage gilt fuer den bewusst engen 002N-Pruefumfang. Die breitere Frage der Insert-Robustheit ueber weitere Zielanwendungen hinweg ist damit **nicht vollstaendig erledigt**, sondern durch diesen Lauf nur enger eingegrenzt.
 
 ## 7. Naechster Schritt
 
@@ -277,4 +275,3 @@ Kein naechster Schritt aus 002N:
 - `build/pushwrite-product/runtime-002n-product-validation-summary.json`
 - `build/pushwrite-product/runtime-002n-product-validation/logs/events.jsonl`
 - `build/pushwrite-product/runtime-002n-textedit-rerun-summary.json`
-
