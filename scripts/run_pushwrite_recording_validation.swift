@@ -8,8 +8,11 @@ struct Options {
     var productAppPath: String?
     var successRuntimeDir = ""
     var blockedRuntimeDir = ""
+    var promptAllowRuntimeDir = ""
+    var promptDenyRuntimeDir = ""
     var deniedRuntimeDir = ""
     var noMicrophoneRuntimeDir = ""
+    var recorderFailureRuntimeDir = ""
     var inferenceFailureRuntimeDir = ""
     var whisperCLIPath: String?
     var whisperModelPath: String?
@@ -25,6 +28,11 @@ enum MicrophonePermissionStatus: String, Codable {
     case granted
     case denied
     case restricted
+}
+
+enum LocalUserFeedback: String, Codable {
+    case systemBeep
+    case blockedPanel
 }
 
 struct HotKeyStateSnapshot: Codable {
@@ -45,6 +53,9 @@ struct ProductFlowSnapshot: Codable {
     let error: String?
     let recordingDurationMs: Int?
     let recordingFilePath: String?
+    let microphonePermissionStatus: MicrophonePermissionStatus?
+    let requestedMicrophonePermission: Bool
+    let localUserFeedback: LocalUserFeedback?
 }
 
 struct RecordingArtifact: Codable {
@@ -100,6 +111,8 @@ struct ProductState: Codable {
     let lastBlockedReason: String?
     let lastError: String?
     let microphonePermissionStatus: MicrophonePermissionStatus
+    let lastRequestedMicrophonePermission: Bool?
+    let lastLocalUserFeedback: LocalUserFeedback?
     let hotKeyInteractionModel: String
     let activeRecordingID: String?
     let lastRecording: RecordingArtifact?
@@ -162,6 +175,7 @@ struct ProductResponse: Codable {
     let recordingArtifact: RecordingArtifact?
     let transcriptionArtifact: TranscriptionArtifact?
     let transcribingPlaceholder: Bool
+    let localUserFeedback: LocalUserFeedback?
     let error: String?
 }
 
@@ -175,6 +189,9 @@ struct ProductFlowEvent: Codable {
     let error: String?
     let recordingDurationMs: Int?
     let recordingFilePath: String?
+    let microphonePermissionStatus: MicrophonePermissionStatus?
+    let requestedMicrophonePermission: Bool
+    let localUserFeedback: LocalUserFeedback?
 }
 
 struct ScenarioSummary: Codable {
@@ -198,6 +215,8 @@ struct PromptValidationSummary: Codable {
     let launchMicrophonePermissionStatus: MicrophonePermissionStatus
     let launchCreatedRecordingArtifacts: Bool
     let launchCreatedHotKeyResponse: Bool
+    let bundleMicrophoneUsageDescription: String?
+    let bundleHasMicrophoneUsageDescription: Bool
     let firstPromptObservedInThisRun: Bool
     let notes: [String]
 }
@@ -207,16 +226,22 @@ struct ValidationSummary: Codable {
     let productAppPath: String
     let successRuntimeDir: String
     let blockedRuntimeDir: String
+    let promptAllowRuntimeDir: String
+    let promptDenyRuntimeDir: String
     let deniedRuntimeDir: String
     let noMicrophoneRuntimeDir: String
+    let recorderFailureRuntimeDir: String
     let inferenceFailureRuntimeDir: String
     let holdDurationMs: Int
     let promptValidation: PromptValidationSummary
-    let success: ScenarioSummary
+    let micAllowed: ScenarioSummary
+    let micNotDeterminedAllow: ScenarioSummary
+    let micNotDeterminedDeny: ScenarioSummary
     let inferenceFailure: ScenarioSummary
     let blockedAccessibility: ScenarioSummary
-    let microphoneDenied: ScenarioSummary
+    let microphonePreviouslyDenied: ScenarioSummary
     let noMicrophone: ScenarioSummary
+    let recorderStartFailure: ScenarioSummary
 }
 
 enum ValidationError: Error, CustomStringConvertible {
@@ -272,10 +297,16 @@ func parseOptions(arguments: [String]) throws -> Options {
             options.successRuntimeDir = try requireValue(for: argument)
         case "--blocked-runtime-dir":
             options.blockedRuntimeDir = try requireValue(for: argument)
+        case "--prompt-allow-runtime-dir":
+            options.promptAllowRuntimeDir = try requireValue(for: argument)
+        case "--prompt-deny-runtime-dir":
+            options.promptDenyRuntimeDir = try requireValue(for: argument)
         case "--denied-runtime-dir":
             options.deniedRuntimeDir = try requireValue(for: argument)
         case "--no-microphone-runtime-dir":
             options.noMicrophoneRuntimeDir = try requireValue(for: argument)
+        case "--recorder-failure-runtime-dir":
+            options.recorderFailureRuntimeDir = try requireValue(for: argument)
         case "--inference-failure-runtime-dir":
             options.inferenceFailureRuntimeDir = try requireValue(for: argument)
         case "--whisper-cli-path":
@@ -434,7 +465,10 @@ func launchProduct(
     forceAccessibilityBlocked: Bool,
     forceAccessibilityTrusted: Bool,
     forceMicrophoneDenied: Bool,
-    forceNoMicrophoneDevice: Bool
+    forceNoMicrophoneDevice: Bool,
+    forceMicrophoneRecorderStartFailure: Bool = false,
+    forcedMicrophonePermissionStatus: MicrophonePermissionStatus? = nil,
+    forcedMicrophonePermissionRequestResult: MicrophonePermissionStatus? = nil
 ) throws -> ProductState {
     let appURL = URL(fileURLWithPath: productAppPath)
     let executableURL = appURL
@@ -469,6 +503,15 @@ func launchProduct(
     }
     if forceNoMicrophoneDevice {
         arguments.append("--force-no-microphone-device")
+    }
+    if forceMicrophoneRecorderStartFailure {
+        arguments.append("--force-microphone-recorder-start-failure")
+    }
+    if let forcedMicrophonePermissionStatus {
+        arguments.append(contentsOf: ["--force-microphone-permission-status", forcedMicrophonePermissionStatus.rawValue])
+    }
+    if let forcedMicrophonePermissionRequestResult {
+        arguments.append(contentsOf: ["--force-microphone-request-result", forcedMicrophonePermissionRequestResult.rawValue])
     }
 
     let process = Process()
@@ -634,6 +677,18 @@ func launchArtifactExists(runtimeDir: String) -> Bool {
     return !entries.isEmpty
 }
 
+func microphoneUsageDescription(from productAppPath: String) -> String? {
+    let infoPlistPath = "\(productAppPath)/Contents/Info.plist"
+    guard
+        let dictionary = NSDictionary(contentsOfFile: infoPlistPath) as? [String: Any],
+        let value = dictionary["NSMicrophoneUsageDescription"] as? String
+    else {
+        return nil
+    }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+}
+
 func runScenario(
     name: String,
     repoRoot: String,
@@ -648,8 +703,16 @@ func runScenario(
     forceAccessibilityTrusted: Bool,
     forceMicrophoneDenied: Bool,
     forceNoMicrophoneDevice: Bool,
+    forceMicrophoneRecorderStartFailure: Bool = false,
+    forcedMicrophonePermissionStatus: MicrophonePermissionStatus? = nil,
+    forcedMicrophonePermissionRequestResult: MicrophonePermissionStatus? = nil,
     expectedTerminalState: String,
     expectedStatus: String,
+    expectedKind: String? = nil,
+    expectedMicrophonePermissionStatus: MicrophonePermissionStatus? = nil,
+    expectedRequestedMicrophonePermission: Bool? = nil,
+    expectedLocalUserFeedback: LocalUserFeedback? = nil,
+    expectedSyntheticPastePosted: Bool? = nil,
     expectedBlockedReason: String? = nil,
     expectedErrorContains: String? = nil,
     expectedTranscriptionStatus: TranscriptionStatus? = nil,
@@ -669,7 +732,10 @@ func runScenario(
         forceAccessibilityBlocked: forceAccessibilityBlocked,
         forceAccessibilityTrusted: forceAccessibilityTrusted,
         forceMicrophoneDenied: forceMicrophoneDenied,
-        forceNoMicrophoneDevice: forceNoMicrophoneDevice
+        forceNoMicrophoneDevice: forceNoMicrophoneDevice,
+        forceMicrophoneRecorderStartFailure: forceMicrophoneRecorderStartFailure,
+        forcedMicrophonePermissionStatus: forcedMicrophonePermissionStatus,
+        forcedMicrophonePermissionRequestResult: forcedMicrophonePermissionRequestResult
     )
 
     defer {
@@ -702,11 +768,20 @@ func runScenario(
     let frontmostAfterTrigger = frontmostBundleID()
 
     var failureReasons: [String] = []
-    if hotKeyResponse.kind != "recordAudio" {
+    if hotKeyResponse.kind != (expectedKind ?? "recordAudio") {
         failureReasons.append("unexpected-kind-\(hotKeyResponse.kind)")
     }
     if hotKeyResponse.status != expectedStatus {
         failureReasons.append("unexpected-status-\(hotKeyResponse.status)")
+    }
+    if let expectedMicrophonePermissionStatus, hotKeyResponse.microphonePermissionStatus != expectedMicrophonePermissionStatus {
+        failureReasons.append("unexpected-microphone-permission-status")
+    }
+    if let expectedRequestedMicrophonePermission, hotKeyResponse.requestedMicrophonePermission != expectedRequestedMicrophonePermission {
+        failureReasons.append("unexpected-requested-microphone-permission")
+    }
+    if let expectedLocalUserFeedback, hotKeyResponse.localUserFeedback != expectedLocalUserFeedback {
+        failureReasons.append("unexpected-local-user-feedback")
     }
     if let expectedBlockedReason, hotKeyResponse.blockedReason != expectedBlockedReason {
         failureReasons.append("unexpected-blocked-reason")
@@ -748,7 +823,11 @@ func runScenario(
         if hotKeyResponse.transcribingPlaceholder {
             failureReasons.append("unexpected-transcribing-placeholder")
         }
-        if hotKeyResponse.syntheticPastePosted {
+        if let expectedSyntheticPastePosted {
+            if hotKeyResponse.syntheticPastePosted != expectedSyntheticPastePosted {
+                failureReasons.append("unexpected-synthetic-paste-posted")
+            }
+        } else if hotKeyResponse.syntheticPastePosted {
             failureReasons.append("synthetic-paste-posted-during-recording-stage")
         }
         if let expectedTranscriptionStatus {
@@ -809,6 +888,31 @@ func runScenario(
     if let finalState, finalState.flow.state != expectedTerminalState {
         failureReasons.append("unexpected-final-state-\(finalState.flow.state)")
     }
+    if let expectedRequestedMicrophonePermission, finalState?.lastRequestedMicrophonePermission != expectedRequestedMicrophonePermission {
+        failureReasons.append("unexpected-state-last-requested-microphone-permission")
+    }
+    if let expectedLocalUserFeedback, finalState?.lastLocalUserFeedback != expectedLocalUserFeedback {
+        failureReasons.append("unexpected-state-last-local-user-feedback")
+    }
+    if let expectedMicrophonePermissionStatus, finalState?.microphonePermissionStatus != expectedMicrophonePermissionStatus {
+        failureReasons.append("unexpected-state-microphone-permission-status")
+    }
+    if let finalEvent = try? readFlowEvents(runtimeDir: runtimeDir).last(where: { $0.id == hotKeyResponse.id }) {
+        if finalEvent.state != expectedTerminalState {
+            failureReasons.append("unexpected-terminal-flow-event")
+        }
+        if let expectedRequestedMicrophonePermission, finalEvent.requestedMicrophonePermission != expectedRequestedMicrophonePermission {
+            failureReasons.append("unexpected-flow-requested-microphone-permission")
+        }
+        if let expectedLocalUserFeedback, finalEvent.localUserFeedback != expectedLocalUserFeedback {
+            failureReasons.append("unexpected-flow-local-user-feedback")
+        }
+        if let expectedMicrophonePermissionStatus, finalEvent.microphonePermissionStatus != expectedMicrophonePermissionStatus {
+            failureReasons.append("unexpected-flow-microphone-permission-status")
+        }
+    } else {
+        failureReasons.append("missing-terminal-flow-event")
+    }
 
     return ScenarioSummary(
         name: name,
@@ -858,19 +962,28 @@ func main() -> Int32 {
     }
 
     if options.successRuntimeDir.isEmpty {
-        options.successRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002j-transcription-success"
+        options.successRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-allowed"
     }
     if options.blockedRuntimeDir.isEmpty {
-        options.blockedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002j-transcription-blocked"
+        options.blockedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-accessibility-blocked"
+    }
+    if options.promptAllowRuntimeDir.isEmpty {
+        options.promptAllowRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-prompt-allow"
+    }
+    if options.promptDenyRuntimeDir.isEmpty {
+        options.promptDenyRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-prompt-deny"
     }
     if options.deniedRuntimeDir.isEmpty {
-        options.deniedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002j-transcription-denied"
+        options.deniedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-previously-denied"
     }
     if options.noMicrophoneRuntimeDir.isEmpty {
-        options.noMicrophoneRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002j-transcription-no-mic"
+        options.noMicrophoneRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-no-device"
+    }
+    if options.recorderFailureRuntimeDir.isEmpty {
+        options.recorderFailureRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-recorder-failed"
     }
     if options.inferenceFailureRuntimeDir.isEmpty {
-        options.inferenceFailureRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002j-transcription-inference-failure"
+        options.inferenceFailureRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-inference-failure"
     }
 
     let productAppURL: URL
@@ -902,6 +1015,12 @@ func main() -> Int32 {
     let accessibilityBlockedReason = "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V."
     let microphoneDeniedReason = "Microphone access is required before PushWrite can start recording."
     let noMicrophoneReason = "No audio input device is available for PushWrite recording."
+    let recorderStartFailureReason = "PushWrite could not start microphone recording."
+    let usageDescription = microphoneUsageDescription(from: productAppURL.path)
+    guard usageDescription != nil else {
+        fputs("Missing NSMicrophoneUsageDescription in \(productAppURL.path)/Contents/Info.plist\n", stderr)
+        return 1
+    }
 
     let promptLaunchState: ProductState
     do {
@@ -927,25 +1046,27 @@ func main() -> Int32 {
         launchMicrophonePermissionStatus: promptLaunchState.microphonePermissionStatus,
         launchCreatedRecordingArtifacts: launchArtifactExists(runtimeDir: options.successRuntimeDir),
         launchCreatedHotKeyResponse: (try? readLastHotKeyResponse(runtimeDir: options.successRuntimeDir)) != nil,
+        bundleMicrophoneUsageDescription: usageDescription,
+        bundleHasMicrophoneUsageDescription: usageDescription != nil,
         firstPromptObservedInThisRun: false,
         notes: promptLaunchState.microphonePermissionStatus == .granted
             ? [
-                "The workstation already had microphone permission granted for PushWrite before 002J validation.",
+                "The workstation already had microphone permission granted for PushWrite before 003A validation.",
                 "No TCC reset was performed, so the OS first-prompt could not be re-observed in this run.",
                 "Launch created neither recording artifacts nor a hotkey response before the first hotkey press."
             ]
             : [
                 "Launch created neither recording artifacts nor a hotkey response before the first hotkey press.",
-                "A real first-prompt was not re-driven in this run."
+                "Prompt-path validation is covered below via deterministic notDetermined overrides."
             ]
     )
 
     stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.successRuntimeDir)
 
-    let successScenario: ScenarioSummary
+    let micAllowedScenario: ScenarioSummary
     do {
-        successScenario = try runScenario(
-            name: "success",
+        micAllowedScenario = try runScenario(
+            name: "mic_allowed",
             repoRoot: repoRoot,
             productAppPath: productAppURL.path,
             runtimeDir: options.successRuntimeDir,
@@ -960,12 +1081,80 @@ func main() -> Int32 {
             forceNoMicrophoneDevice: false,
             expectedTerminalState: "done",
             expectedStatus: "succeeded",
+            expectedKind: "insertTranscription",
+            expectedMicrophonePermissionStatus: .granted,
+            expectedRequestedMicrophonePermission: false,
+            expectedSyntheticPastePosted: true,
             expectedTranscriptionStatus: .succeeded,
             expectRecordingArtifact: true,
             expectNonEmptyTranscriptText: true
         )
     } catch {
-        fputs("Success recording validation failed: \(error)\n", stderr)
+        fputs("Mic-allowed validation failed: \(error)\n", stderr)
+        return 1
+    }
+
+    let micNotDeterminedAllowScenario: ScenarioSummary
+    do {
+        micNotDeterminedAllowScenario = try runScenario(
+            name: "mic_not_determined_allow",
+            repoRoot: repoRoot,
+            productAppPath: productAppURL.path,
+            runtimeDir: options.promptAllowRuntimeDir,
+            holdDurationMs: options.holdDurationMs,
+            whisperCLIPath: whisperCLIPath,
+            whisperModelPath: whisperModelPath,
+            whisperLanguage: options.whisperLanguage,
+            transcriptionFixtureWAVPath: transcriptionFixtureWAVPath,
+            forceAccessibilityBlocked: false,
+            forceAccessibilityTrusted: true,
+            forceMicrophoneDenied: false,
+            forceNoMicrophoneDevice: false,
+            forcedMicrophonePermissionStatus: .notDetermined,
+            forcedMicrophonePermissionRequestResult: .granted,
+            expectedTerminalState: "done",
+            expectedStatus: "succeeded",
+            expectedKind: "insertTranscription",
+            expectedMicrophonePermissionStatus: .granted,
+            expectedRequestedMicrophonePermission: true,
+            expectedSyntheticPastePosted: true,
+            expectedTranscriptionStatus: .succeeded,
+            expectRecordingArtifact: true,
+            expectNonEmptyTranscriptText: true
+        )
+    } catch {
+        fputs("Mic not-determined allow validation failed: \(error)\n", stderr)
+        return 1
+    }
+
+    let micNotDeterminedDenyScenario: ScenarioSummary
+    do {
+        micNotDeterminedDenyScenario = try runScenario(
+            name: "mic_not_determined_deny",
+            repoRoot: repoRoot,
+            productAppPath: productAppURL.path,
+            runtimeDir: options.promptDenyRuntimeDir,
+            holdDurationMs: 120,
+            whisperCLIPath: whisperCLIPath,
+            whisperModelPath: whisperModelPath,
+            whisperLanguage: options.whisperLanguage,
+            transcriptionFixtureWAVPath: nil,
+            forceAccessibilityBlocked: false,
+            forceAccessibilityTrusted: true,
+            forceMicrophoneDenied: false,
+            forceNoMicrophoneDevice: false,
+            forcedMicrophonePermissionStatus: .notDetermined,
+            forcedMicrophonePermissionRequestResult: .denied,
+            expectedTerminalState: "blocked",
+            expectedStatus: "blocked",
+            expectedMicrophonePermissionStatus: .denied,
+            expectedRequestedMicrophonePermission: true,
+            expectedLocalUserFeedback: .blockedPanel,
+            expectedBlockedReason: microphoneDeniedReason,
+            expectRecordingArtifact: false
+        )
+    } catch {
+        fputs("Mic not-determined deny validation failed: \(error)\n", stderr)
         return 1
     }
 
@@ -987,6 +1176,8 @@ func main() -> Int32 {
             forceNoMicrophoneDevice: false,
             expectedTerminalState: "error",
             expectedStatus: "failed",
+            expectedMicrophonePermissionStatus: .granted,
+            expectedRequestedMicrophonePermission: false,
             expectedErrorContains: "whisper.cpp model is missing",
             expectedTranscriptionStatus: .failed,
             expectedTranscriptionErrorContains: "whisper.cpp model is missing",
@@ -1015,6 +1206,8 @@ func main() -> Int32 {
             forceNoMicrophoneDevice: false,
             expectedTerminalState: "blocked",
             expectedStatus: "blocked",
+            expectedRequestedMicrophonePermission: false,
+            expectedLocalUserFeedback: .systemBeep,
             expectedBlockedReason: accessibilityBlockedReason,
             expectRecordingArtifact: false
         )
@@ -1026,7 +1219,7 @@ func main() -> Int32 {
     let deniedScenario: ScenarioSummary
     do {
         deniedScenario = try runScenario(
-            name: "microphone_denied",
+            name: "mic_previously_denied",
             repoRoot: repoRoot,
             productAppPath: productAppURL.path,
             runtimeDir: options.deniedRuntimeDir,
@@ -1041,18 +1234,21 @@ func main() -> Int32 {
             forceNoMicrophoneDevice: false,
             expectedTerminalState: "blocked",
             expectedStatus: "blocked",
+            expectedMicrophonePermissionStatus: .denied,
+            expectedRequestedMicrophonePermission: false,
+            expectedLocalUserFeedback: .blockedPanel,
             expectedBlockedReason: microphoneDeniedReason,
             expectRecordingArtifact: false
         )
     } catch {
-        fputs("Microphone denied validation failed: \(error)\n", stderr)
+        fputs("Previously denied validation failed: \(error)\n", stderr)
         return 1
     }
 
     let noMicrophoneScenario: ScenarioSummary
     do {
         noMicrophoneScenario = try runScenario(
-            name: "no_microphone",
+            name: "mic_allowed_but_no_device",
             repoRoot: repoRoot,
             productAppPath: productAppURL.path,
             runtimeDir: options.noMicrophoneRuntimeDir,
@@ -1067,6 +1263,9 @@ func main() -> Int32 {
             forceNoMicrophoneDevice: true,
             expectedTerminalState: "error",
             expectedStatus: "failed",
+            expectedMicrophonePermissionStatus: .granted,
+            expectedRequestedMicrophonePermission: false,
+            expectedLocalUserFeedback: .blockedPanel,
             expectedErrorContains: noMicrophoneReason,
             expectRecordingArtifact: false
         )
@@ -1075,21 +1274,57 @@ func main() -> Int32 {
         return 1
     }
 
+    let recorderFailureScenario: ScenarioSummary
+    do {
+        recorderFailureScenario = try runScenario(
+            name: "mic_allowed_but_recorder_failed",
+            repoRoot: repoRoot,
+            productAppPath: productAppURL.path,
+            runtimeDir: options.recorderFailureRuntimeDir,
+            holdDurationMs: 120,
+            whisperCLIPath: whisperCLIPath,
+            whisperModelPath: whisperModelPath,
+            whisperLanguage: options.whisperLanguage,
+            transcriptionFixtureWAVPath: nil,
+            forceAccessibilityBlocked: false,
+            forceAccessibilityTrusted: true,
+            forceMicrophoneDenied: false,
+            forceNoMicrophoneDevice: false,
+            forceMicrophoneRecorderStartFailure: true,
+            expectedTerminalState: "error",
+            expectedStatus: "failed",
+            expectedMicrophonePermissionStatus: .granted,
+            expectedRequestedMicrophonePermission: false,
+            expectedLocalUserFeedback: .blockedPanel,
+            expectedErrorContains: recorderStartFailureReason,
+            expectRecordingArtifact: false
+        )
+    } catch {
+        fputs("Recorder-start-failure validation failed: \(error)\n", stderr)
+        return 1
+    }
+
     let summary = ValidationSummary(
         timestamp: isoTimestamp(),
         productAppPath: productAppURL.path,
         successRuntimeDir: options.successRuntimeDir,
         blockedRuntimeDir: options.blockedRuntimeDir,
+        promptAllowRuntimeDir: options.promptAllowRuntimeDir,
+        promptDenyRuntimeDir: options.promptDenyRuntimeDir,
         deniedRuntimeDir: options.deniedRuntimeDir,
         noMicrophoneRuntimeDir: options.noMicrophoneRuntimeDir,
+        recorderFailureRuntimeDir: options.recorderFailureRuntimeDir,
         inferenceFailureRuntimeDir: options.inferenceFailureRuntimeDir,
         holdDurationMs: options.holdDurationMs,
         promptValidation: promptValidation,
-        success: successScenario,
+        micAllowed: micAllowedScenario,
+        micNotDeterminedAllow: micNotDeterminedAllowScenario,
+        micNotDeterminedDeny: micNotDeterminedDenyScenario,
         inferenceFailure: inferenceFailureScenario,
         blockedAccessibility: blockedScenario,
-        microphoneDenied: deniedScenario,
-        noMicrophone: noMicrophoneScenario
+        microphonePreviouslyDenied: deniedScenario,
+        noMicrophone: noMicrophoneScenario,
+        recorderStartFailure: recorderFailureScenario
     )
 
     if let resultsFile = options.resultsFile {

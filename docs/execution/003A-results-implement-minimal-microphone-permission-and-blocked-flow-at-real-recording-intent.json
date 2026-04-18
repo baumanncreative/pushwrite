@@ -1,0 +1,100 @@
+{
+  "task": "003A",
+  "title": "implement minimal microphone permission and blocked flow at real recording intent",
+  "timestamp": "2026-04-18T11:34:32Z",
+  "bundleValidation": {
+    "bundleHasMicrophoneUsageDescription": true,
+    "bundleMicrophoneUsageDescription": "PushWrite needs microphone access to record speech from the global push-to-talk hotkey.",
+    "launchCreatedRecordingArtifacts": false,
+    "launchCreatedHotKeyResponse": false,
+    "launchMicrophonePermissionStatus": "granted",
+    "firstPromptObservedInThisRun": false,
+    "notes": [
+      "The workstation already had microphone permission granted for PushWrite before 003A validation.",
+      "No TCC reset was performed, so the OS first-prompt could not be re-observed in this run.",
+      "Launch created neither recording artifacts nor a hotkey response before the first hotkey press."
+    ]
+  },
+  "implementation": {
+    "productCode": [
+      "Add requestedMicrophonePermission, microphonePermissionStatus, and localUserFeedback to hotkey flow/state/response observability.",
+      "Keep microphone permission checks directly before recording start.",
+      "Request microphone access only when a real hotkey recording attempt begins.",
+      "Reuse a minimal local feedback panel for microphone denied/restricted and recorder/device start failures.",
+      "Keep permission-blocked and device/recorder-failed paths distinct."
+    ],
+    "validatorSupport": [
+      "Add deterministic runtime overrides for notDetermined permission state, permission request result, and recorder start failure.",
+      "Extend control and recording validation scripts to exercise the new microphone scenarios."
+    ]
+  },
+  "validation": {
+    "recordingValidation": {
+      "script": "/Users/michel/Code/pushwrite/scripts/run_pushwrite_recording_validation.sh",
+      "productAppPath": "/private/tmp/pushwrite-003a-build/PushWrite.app",
+      "scenarios": {
+        "mic_allowed": {
+          "success": true,
+          "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-003a-mic-allowed"
+        },
+        "mic_not_determined_allow": {
+          "success": true,
+          "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-003a-mic-prompt-allow"
+        },
+        "mic_not_determined_deny": {
+          "success": true,
+          "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-003a-mic-prompt-deny"
+        },
+        "mic_previously_denied": {
+          "success": true,
+          "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-003a-mic-previously-denied"
+        },
+        "mic_allowed_but_no_device": {
+          "success": true,
+          "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-003a-mic-no-device"
+        },
+        "mic_allowed_but_recorder_failed": {
+          "success": true,
+          "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-003a-mic-recorder-failed"
+        },
+        "blocked_accessibility": {
+          "success": true,
+          "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-003a-accessibility-blocked"
+        },
+        "inference_failure": {
+          "success": true,
+          "runtimeDir": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-003a-inference-failure"
+        }
+      }
+    },
+    "insertRegressionValidation": {
+      "script": "/Users/michel/Code/pushwrite/scripts/run_pushwrite_transcription_insert_validation.sh",
+      "productAppPath": "/private/tmp/pushwrite-003a-build/PushWrite.app",
+      "scenarios": {
+        "success": true,
+        "gated_empty": true,
+        "gated_too_short": true,
+        "blocked_accessibility": true,
+        "inference_failure": true
+      },
+      "runtimeDirs": {
+        "success": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002k-success",
+        "gated_empty": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002k-gated-empty",
+        "gated_too_short": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002k-gated-too-short",
+        "blocked_accessibility": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002k-blocked",
+        "inference_failure": "/Users/michel/Code/pushwrite/build/pushwrite-product/runtime-002k-inference-failure"
+      }
+    }
+  },
+  "changedArtifacts": [
+    "/Users/michel/Code/pushwrite/app/macos/PushWrite/main.swift",
+    "/Users/michel/Code/pushwrite/scripts/control_pushwrite_product.swift",
+    "/Users/michel/Code/pushwrite/scripts/run_pushwrite_recording_validation.swift",
+    "/Users/michel/Code/pushwrite/docs/execution/003A-results-implement-minimal-microphone-permission-and-blocked-flow-at-real-recording-intent.md",
+    "/Users/michel/Code/pushwrite/docs/execution/003A-results-implement-minimal-microphone-permission-and-blocked-flow-at-real-recording-intent.json"
+  ],
+  "knownLimits": [
+    "A real TCC reset was not performed on this workstation.",
+    "The real OS first-prompt was therefore not re-observed outside the deterministic validator overrides."
+  ]
+}

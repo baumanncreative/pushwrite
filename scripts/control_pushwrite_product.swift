@@ -46,6 +46,9 @@ struct Options {
     let forceAccessibilityTrusted: Bool
     let forceMicrophoneDenied: Bool
     let forceNoMicrophoneDevice: Bool
+    let forceMicrophoneRecorderStartFailure: Bool
+    let forcedMicrophonePermissionStatus: MicrophonePermissionStatus?
+    let forcedMicrophonePermissionRequestResult: MicrophonePermissionStatus?
     let settleDelayMs: UInt32?
     let pasteDelayMs: UInt32?
     let restoreDelayMs: UInt32?
@@ -61,6 +64,11 @@ enum MicrophonePermissionStatus: String, Codable {
 
 enum HotKeyInteractionModel: String, Codable {
     case pressAndHold
+}
+
+enum LocalUserFeedback: String, Codable {
+    case systemBeep
+    case blockedPanel
 }
 
 struct ProductRequest: Codable {
@@ -94,6 +102,9 @@ struct ProductFlowSnapshot: Codable {
     let error: String?
     let recordingDurationMs: Int?
     let recordingFilePath: String?
+    let microphonePermissionStatus: MicrophonePermissionStatus?
+    let requestedMicrophonePermission: Bool
+    let localUserFeedback: LocalUserFeedback?
 }
 
 struct RecordingArtifact: Codable {
@@ -158,6 +169,8 @@ struct ProductState: Codable {
     let lastResponseStatus: ProductResponseStatus?
     let lastTranscriptionInsertGate: TranscriptionInsertGate?
     let lastGatedTranscriptionFeedback: GatedTranscriptionFeedback?
+    let lastRequestedMicrophonePermission: Bool?
+    let lastLocalUserFeedback: LocalUserFeedback?
     let lastBlockedReason: String?
     let lastError: String?
     let microphonePermissionStatus: MicrophonePermissionStatus
@@ -206,6 +219,7 @@ struct ProductResponse: Codable {
     let recordingArtifact: RecordingArtifact?
     let transcriptionArtifact: TranscriptionArtifact?
     let transcribingPlaceholder: Bool
+    let localUserFeedback: LocalUserFeedback?
     let error: String?
 }
 
@@ -257,6 +271,32 @@ enum ControlError: Error, CustomStringConvertible {
     }
 }
 
+func parseMicrophonePermissionStatus(_ value: String?) -> MicrophonePermissionStatus? {
+    guard let value else {
+        return nil
+    }
+
+    switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "notdetermined", "not_determined", "not-determined":
+        return .notDetermined
+    case "granted", "authorized", "authorised":
+        return .granted
+    case "denied":
+        return .denied
+    case "restricted":
+        return .restricted
+    default:
+        return nil
+    }
+}
+
+func requireMicrophonePermissionStatus(_ value: String?, flag: String) throws -> MicrophonePermissionStatus {
+    guard let status = parseMicrophonePermissionStatus(value) else {
+        throw ControlError.unknownArgument("\(flag) requires one of: notDetermined, granted, denied, restricted")
+    }
+    return status
+}
+
 func parseOptions(arguments: [String]) throws -> Options {
     guard let first = arguments.first else {
         throw ControlError.missingCommand
@@ -294,6 +334,14 @@ func parseOptions(arguments: [String]) throws -> Options {
     var forceAccessibilityTrusted = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_TRUSTED"] == "1"
     var forceMicrophoneDenied = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_DENIED"] == "1"
     var forceNoMicrophoneDevice = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_NO_MICROPHONE_DEVICE"] == "1"
+    var forceMicrophoneRecorderStartFailure =
+        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_RECORDER_START_FAILURE"] == "1"
+    var forcedMicrophonePermissionStatus = parseMicrophonePermissionStatus(
+        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_PERMISSION_STATUS"]
+    )
+    var forcedMicrophonePermissionRequestResult = parseMicrophonePermissionStatus(
+        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_REQUEST_RESULT"]
+    )
     var settleDelayMs: UInt32?
     var pasteDelayMs: UInt32?
     var restoreDelayMs: UInt32?
@@ -356,6 +404,18 @@ func parseOptions(arguments: [String]) throws -> Options {
             forceMicrophoneDenied = true
         case "--force-no-microphone-device":
             forceNoMicrophoneDevice = true
+        case "--force-microphone-recorder-start-failure":
+            forceMicrophoneRecorderStartFailure = true
+        case "--force-microphone-permission-status":
+            forcedMicrophonePermissionStatus = try requireMicrophonePermissionStatus(
+                try requireValue(for: argument),
+                flag: argument
+            )
+        case "--force-microphone-request-result":
+            forcedMicrophonePermissionRequestResult = try requireMicrophonePermissionStatus(
+                try requireValue(for: argument),
+                flag: argument
+            )
         case "--settle-delay-ms":
             settleDelayMs = try requireUInt32(for: argument)
         case "--paste-delay-ms":
@@ -397,6 +457,9 @@ func parseOptions(arguments: [String]) throws -> Options {
         forceAccessibilityTrusted: forceAccessibilityTrusted,
         forceMicrophoneDenied: forceMicrophoneDenied,
         forceNoMicrophoneDevice: forceNoMicrophoneDevice,
+        forceMicrophoneRecorderStartFailure: forceMicrophoneRecorderStartFailure,
+        forcedMicrophonePermissionStatus: forcedMicrophonePermissionStatus,
+        forcedMicrophonePermissionRequestResult: forcedMicrophonePermissionRequestResult,
         settleDelayMs: settleDelayMs,
         pasteDelayMs: pasteDelayMs,
         restoreDelayMs: restoreDelayMs,
@@ -455,6 +518,8 @@ func readState(from runtimeDir: String) -> ProductState? {
             lastResponseStatus: state.lastResponseStatus,
             lastTranscriptionInsertGate: state.lastTranscriptionInsertGate,
             lastGatedTranscriptionFeedback: state.lastGatedTranscriptionFeedback,
+            lastRequestedMicrophonePermission: state.lastRequestedMicrophonePermission,
+            lastLocalUserFeedback: state.lastLocalUserFeedback,
             lastBlockedReason: state.lastBlockedReason,
             lastError: state.lastError,
             microphonePermissionStatus: state.microphonePermissionStatus,
@@ -542,6 +607,15 @@ func launchProduct(options: Options) throws -> ProductState {
     }
     if options.forceNoMicrophoneDevice {
         arguments.append("--force-no-microphone-device")
+    }
+    if options.forceMicrophoneRecorderStartFailure {
+        arguments.append("--force-microphone-recorder-start-failure")
+    }
+    if let forcedMicrophonePermissionStatus = options.forcedMicrophonePermissionStatus {
+        arguments.append(contentsOf: ["--force-microphone-permission-status", forcedMicrophonePermissionStatus.rawValue])
+    }
+    if let forcedMicrophonePermissionRequestResult = options.forcedMicrophonePermissionRequestResult {
+        arguments.append(contentsOf: ["--force-microphone-request-result", forcedMicrophonePermissionRequestResult.rawValue])
     }
 
     let process = Process()
@@ -632,6 +706,8 @@ do {
                 lastResponseStatus: nil,
                 lastTranscriptionInsertGate: nil,
                 lastGatedTranscriptionFeedback: nil,
+                lastRequestedMicrophonePermission: nil,
+                lastLocalUserFeedback: nil,
                 lastBlockedReason: nil,
                 lastError: nil,
                 microphonePermissionStatus: .notDetermined,

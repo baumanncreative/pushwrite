@@ -56,10 +56,19 @@ enum HotKeyInteractionModel: String, Codable {
     case pressAndHold
 }
 
+enum LocalUserFeedback: String, Codable {
+    case systemBeep
+    case blockedPanel
+}
+
 var runtimeAccessibilityBlockedOverride = false
 var runtimeAccessibilityTrustedOverride = false
 var runtimeMicrophoneDeniedOverride = false
 var runtimeNoMicrophoneDeviceOverride = false
+var runtimeMicrophoneRecorderStartFailureOverride = false
+var runtimeForcedMicrophonePermissionStatus: MicrophonePermissionStatus?
+var runtimeForcedMicrophonePermissionRequestResult: MicrophonePermissionStatus?
+var runtimeCurrentMicrophonePermissionStatusOverride: MicrophonePermissionStatus?
 
 struct LaunchOptions {
     let runtimeDir: String
@@ -72,6 +81,9 @@ struct LaunchOptions {
     let forceAccessibilityTrusted: Bool
     let forceMicrophoneDenied: Bool
     let forceNoMicrophoneDevice: Bool
+    let forceMicrophoneRecorderStartFailure: Bool
+    let forcedMicrophonePermissionStatus: MicrophonePermissionStatus?
+    let forcedMicrophonePermissionRequestResult: MicrophonePermissionStatus?
 }
 
 struct GlobalHotKeyConfiguration {
@@ -143,6 +155,9 @@ struct ProductFlowSnapshot: Codable {
     let error: String?
     let recordingDurationMs: Int?
     let recordingFilePath: String?
+    let microphonePermissionStatus: MicrophonePermissionStatus?
+    let requestedMicrophonePermission: Bool
+    let localUserFeedback: LocalUserFeedback?
 }
 
 struct ProductFlowEvent: Codable {
@@ -157,6 +172,9 @@ struct ProductFlowEvent: Codable {
     let error: String?
     let recordingDurationMs: Int?
     let recordingFilePath: String?
+    let microphonePermissionStatus: MicrophonePermissionStatus?
+    let requestedMicrophonePermission: Bool
+    let localUserFeedback: LocalUserFeedback?
 }
 
 struct RecordingArtifact: Codable {
@@ -254,6 +272,7 @@ struct ProductResponse: Codable {
     let recordingArtifact: RecordingArtifact?
     let transcriptionArtifact: TranscriptionArtifact?
     let transcribingPlaceholder: Bool
+    let localUserFeedback: LocalUserFeedback?
     let error: String?
 }
 
@@ -272,6 +291,8 @@ struct ProductState: Codable {
     let lastResponseStatus: ProductResponseStatus?
     let lastTranscriptionInsertGate: TranscriptionInsertGate?
     let lastGatedTranscriptionFeedback: GatedTranscriptionFeedback?
+    let lastRequestedMicrophonePermission: Bool?
+    let lastLocalUserFeedback: LocalUserFeedback?
     let lastBlockedReason: String?
     let lastError: String?
     let microphonePermissionStatus: MicrophonePermissionStatus
@@ -445,6 +466,14 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
     var forceAccessibilityTrusted = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_TRUSTED"] == "1"
     var forceMicrophoneDenied = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_DENIED"] == "1"
     var forceNoMicrophoneDevice = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_NO_MICROPHONE_DEVICE"] == "1"
+    var forceMicrophoneRecorderStartFailure =
+        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_RECORDER_START_FAILURE"] == "1"
+    var forcedMicrophonePermissionStatus = parseMicrophonePermissionStatusOverride(
+        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_PERMISSION_STATUS"]
+    )
+    var forcedMicrophonePermissionRequestResult = parseMicrophonePermissionStatusOverride(
+        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_REQUEST_RESULT"]
+    )
     var index = 0
 
     func requireValue(for flag: String) throws -> String {
@@ -479,6 +508,18 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
             forceMicrophoneDenied = true
         case "--force-no-microphone-device":
             forceNoMicrophoneDevice = true
+        case "--force-microphone-recorder-start-failure":
+            forceMicrophoneRecorderStartFailure = true
+        case "--force-microphone-permission-status":
+            forcedMicrophonePermissionStatus = try requireMicrophonePermissionStatus(
+                parseMicrophonePermissionStatusOverride(try requireValue(for: argument)),
+                flag: argument
+            )
+        case "--force-microphone-request-result":
+            forcedMicrophonePermissionRequestResult = try requireMicrophonePermissionStatus(
+                parseMicrophonePermissionStatusOverride(try requireValue(for: argument)),
+                flag: argument
+            )
         default:
             throw ProductRuntimeError.unknownArgument(argument)
         }
@@ -499,8 +540,42 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
         forceAccessibilityBlocked: forceAccessibilityBlocked,
         forceAccessibilityTrusted: forceAccessibilityTrusted,
         forceMicrophoneDenied: forceMicrophoneDenied,
-        forceNoMicrophoneDevice: forceNoMicrophoneDevice
+        forceNoMicrophoneDevice: forceNoMicrophoneDevice,
+        forceMicrophoneRecorderStartFailure: forceMicrophoneRecorderStartFailure,
+        forcedMicrophonePermissionStatus: forcedMicrophonePermissionStatus,
+        forcedMicrophonePermissionRequestResult: forcedMicrophonePermissionRequestResult
     )
+}
+
+func parseMicrophonePermissionStatusOverride(_ value: String?) -> MicrophonePermissionStatus? {
+    guard let value else {
+        return nil
+    }
+
+    switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "notdetermined", "not_determined", "not-determined":
+        return .notDetermined
+    case "granted", "authorized", "authorised":
+        return .granted
+    case "denied":
+        return .denied
+    case "restricted":
+        return .restricted
+    default:
+        return nil
+    }
+}
+
+func requireMicrophonePermissionStatus(
+    _ status: MicrophonePermissionStatus?,
+    flag: String
+) throws -> MicrophonePermissionStatus {
+    guard let status else {
+        throw ProductRuntimeError.invalidRequest(
+            "\(flag) requires one of: notDetermined, granted, denied, restricted."
+        )
+    }
+    return status
 }
 
 func sleepMs(_ value: UInt32) {
@@ -643,6 +718,14 @@ func microphoneRestrictedReason() -> String {
 }
 
 func currentMicrophonePermissionStatus() -> MicrophonePermissionStatus {
+    if let runtimeCurrentMicrophonePermissionStatusOverride {
+        return runtimeCurrentMicrophonePermissionStatusOverride
+    }
+
+    if let runtimeForcedMicrophonePermissionStatus {
+        return runtimeForcedMicrophonePermissionStatus
+    }
+
     if runtimeMicrophoneDeniedOverride || ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_DENIED"] == "1" {
         return .denied
     }
@@ -691,6 +774,12 @@ func requestMicrophoneAccess(completion: @escaping (MicrophonePermissionStatus, 
         return
     }
 
+    if let runtimeForcedMicrophonePermissionRequestResult {
+        runtimeCurrentMicrophonePermissionStatusOverride = runtimeForcedMicrophonePermissionRequestResult
+        completion(runtimeForcedMicrophonePermissionRequestResult, true)
+        return
+    }
+
     AVCaptureDevice.requestAccess(for: .audio) { granted in
         let resolvedStatus: MicrophonePermissionStatus
         if runtimeMicrophoneDeniedOverride {
@@ -700,6 +789,7 @@ func requestMicrophoneAccess(completion: @escaping (MicrophonePermissionStatus, 
         } else {
             resolvedStatus = currentMicrophonePermissionStatus()
         }
+        runtimeCurrentMicrophonePermissionStatusOverride = resolvedStatus
         completion(resolvedStatus, true)
     }
 }
@@ -894,12 +984,20 @@ func readRequest(at path: String) throws -> ProductRequest {
     throw lastError ?? ProductRuntimeError.invalidRequestFile(path)
 }
 
-final class AccessibilityBlockedWindowController: NSWindowController, NSWindowDelegate {
-    private let onOpenSettings: () -> Void
+final class ProductFeedbackWindowController: NSWindowController, NSWindowDelegate {
+    private let onPrimaryAction: (() -> Void)?
     private let onDismiss: () -> Void
 
-    init(bundleName: String, blockedReason: String, onOpenSettings: @escaping () -> Void, onDismiss: @escaping () -> Void) {
-        self.onOpenSettings = onOpenSettings
+    init(
+        windowTitle: String,
+        title: String,
+        message: String,
+        primaryButtonTitle: String?,
+        dismissButtonTitle: String,
+        onPrimaryAction: (() -> Void)?,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.onPrimaryAction = onPrimaryAction
         self.onDismiss = onDismiss
 
         let window = NSWindow(
@@ -908,7 +1006,7 @@ final class AccessibilityBlockedWindowController: NSWindowController, NSWindowDe
             backing: .buffered,
             defer: false
         )
-        window.title = "PushWrite setup required"
+        window.title = windowTitle
         window.center()
         window.isReleasedWhenClosed = false
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
@@ -918,26 +1016,31 @@ final class AccessibilityBlockedWindowController: NSWindowController, NSWindowDe
         contentView.translatesAutoresizingMaskIntoConstraints = false
         window.contentView = contentView
 
-        let titleLabel = NSTextField(labelWithString: "Accessibility access required")
+        let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let bodyLabel = NSTextField(wrappingLabelWithString: "\(bundleName) cannot insert text until Accessibility is enabled for this app in System Settings > Privacy & Security > Accessibility.\n\n\(blockedReason)")
+        let bodyLabel = NSTextField(wrappingLabelWithString: message)
         bodyLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let openButton = NSButton(title: "Open System Settings", target: nil, action: nil)
-        openButton.translatesAutoresizingMaskIntoConstraints = false
-        openButton.keyEquivalent = "\r"
+        let primaryButton = primaryButtonTitle.map { title in
+            let button = NSButton(title: title, target: nil, action: nil)
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.keyEquivalent = "\r"
+            return button
+        }
 
-        let dismissButton = NSButton(title: "Not Now", target: nil, action: nil)
+        let dismissButton = NSButton(title: dismissButtonTitle, target: nil, action: nil)
         dismissButton.translatesAutoresizingMaskIntoConstraints = false
 
         contentView.addSubview(titleLabel)
         contentView.addSubview(bodyLabel)
-        contentView.addSubview(openButton)
+        if let primaryButton {
+            contentView.addSubview(primaryButton)
+        }
         contentView.addSubview(dismissButton)
 
-        NSLayoutConstraint.activate([
+        var constraints = [
             titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
             titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
             titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 24),
@@ -948,15 +1051,19 @@ final class AccessibilityBlockedWindowController: NSWindowController, NSWindowDe
 
             dismissButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
             dismissButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -24),
+        ]
 
-            openButton.trailingAnchor.constraint(equalTo: dismissButton.leadingAnchor, constant: -12),
-            openButton.bottomAnchor.constraint(equalTo: dismissButton.bottomAnchor)
-        ])
+        if let primaryButton {
+            constraints.append(primaryButton.trailingAnchor.constraint(equalTo: dismissButton.leadingAnchor, constant: -12))
+            constraints.append(primaryButton.bottomAnchor.constraint(equalTo: dismissButton.bottomAnchor))
+        }
+
+        NSLayoutConstraint.activate(constraints)
 
         super.init(window: window)
         window.delegate = self
-        openButton.target = self
-        openButton.action = #selector(openSettings)
+        primaryButton?.target = self
+        primaryButton?.action = #selector(runPrimaryAction)
         dismissButton.target = self
         dismissButton.action = #selector(dismissPanel)
     }
@@ -966,8 +1073,8 @@ final class AccessibilityBlockedWindowController: NSWindowController, NSWindowDe
         fatalError("init(coder:) has not been implemented")
     }
 
-    @objc private func openSettings() {
-        onOpenSettings()
+    @objc private func runPrimaryAction() {
+        onPrimaryAction?()
         close()
     }
 
@@ -994,6 +1101,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private var lastResponseStatus: ProductResponseStatus?
     private var lastTranscriptionInsertGate: TranscriptionInsertGate?
     private var lastGatedTranscriptionFeedback: GatedTranscriptionFeedback?
+    private var lastRequestedMicrophonePermission: Bool?
+    private var lastLocalUserFeedback: LocalUserFeedback?
     private var lastBlockedReason: String?
     private var lastError: String?
     private var lastRecording: RecordingArtifact?
@@ -1003,7 +1112,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyState: HotKeyStateSnapshot
     private var flowSnapshot: ProductFlowSnapshot
     private var pollTimer: Timer?
-    private var blockedWindowController: AccessibilityBlockedWindowController?
+    private var blockedWindowController: ProductFeedbackWindowController?
     private var launchBlockedUIHasBeenPresented = false
     private var isHotKeyHeld = false
     private var isAwaitingMicrophonePermission = false
@@ -1032,7 +1141,10 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             blockedReason: nil,
             error: nil,
             recordingDurationMs: nil,
-            recordingFilePath: nil
+            recordingFilePath: nil,
+            microphonePermissionStatus: currentMicrophonePermissionStatus(),
+            requestedMicrophonePermission: false,
+            localUserFeedback: nil
         )
     }
 
@@ -1199,11 +1311,10 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 id: flowID,
                 trigger: .globalHotKey,
                 textLength: 0,
-                error: hotKeyState.registrationError ?? "Global hotkey is not registered."
+                error: hotKeyState.registrationError ?? "Global hotkey is not registered.",
+                localUserFeedback: .systemBeep
             )
-            DispatchQueue.main.async {
-                NSSound.beep()
-            }
+            emitSystemBeep()
             return
         }
 
@@ -1213,23 +1324,26 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 id: flowID,
                 trigger: .globalHotKey,
                 textLength: 0,
-                blockedReason: busyBlockedReason()
+                blockedReason: busyBlockedReason(),
+                localUserFeedback: .systemBeep
             )
-            DispatchQueue.main.async {
-                NSSound.beep()
-            }
+            emitSystemBeep()
             return
         }
 
         isProcessing = true
         activeHotKeyFlowID = flowID
         pendingStopAfterRecordingStart = false
-        transitionFlow(to: .triggered, id: flowID, trigger: .globalHotKey, textLength: 0)
+        transitionFlow(
+            to: .triggered,
+            id: flowID,
+            trigger: .globalHotKey,
+            textLength: 0,
+            microphonePermissionStatus: currentMicrophonePermissionStatus()
+        )
 
         guard receiptObservation.accessibilityTrusted else {
-            DispatchQueue.main.async {
-                NSSound.beep()
-            }
+            emitSystemBeep()
             completeGlobalHotKeyFlow(
                 flowID: flowID,
                 response: makeBlockedHotKeyResponse(
@@ -1237,7 +1351,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                     receiptObservation: receiptObservation,
                     microphonePermissionStatus: currentMicrophonePermissionStatus(),
                     blockedReason: ProductRuntimeError.accessibilityDenied.description,
-                    requestedMicrophonePermission: false
+                    requestedMicrophonePermission: false,
+                    localUserFeedback: .systemBeep
                 )
             )
             return
@@ -1278,6 +1393,37 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         return "PushWrite is already processing another action."
     }
 
+    private func emitSystemBeep() {
+        DispatchQueue.main.async {
+            NSSound.beep()
+        }
+    }
+
+    private func presentMicrophonePermissionBlockedUI(blockedReason: String) {
+        let bundleName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "PushWrite"
+        presentFeedbackPanel(
+            windowTitle: "PushWrite setup required",
+            title: "Microphone access required",
+            message: "\(bundleName) cannot start recording until microphone access is enabled for this app in System Settings > Privacy & Security > Microphone.\n\n\(blockedReason)",
+            primaryButtonTitle: "Open System Settings",
+            dismissButtonTitle: "Not Now",
+            onPrimaryAction: { [weak self] in
+                self?.openMicrophoneSettings()
+            }
+        )
+    }
+
+    private func presentRecordingStartFailureUI(error: String) {
+        presentFeedbackPanel(
+            windowTitle: "PushWrite recording unavailable",
+            title: "Recording could not start",
+            message: error,
+            primaryButtonTitle: nil,
+            dismissButtonTitle: "OK",
+            onPrimaryAction: nil
+        )
+    }
+
     private func startHotKeyRecordingAttempt(flowID: String, receiptObservation: ReceiptObservation) {
         isAwaitingMicrophonePermission = true
         requestMicrophoneAccess { [weak self] permissionStatus, requestedPermission in
@@ -1293,7 +1439,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 }
 
                 if let blockedReason = microphoneBlockedReason(for: permissionStatus) {
-                    NSSound.beep()
+                    self.presentMicrophonePermissionBlockedUI(blockedReason: blockedReason)
                     self.completeGlobalHotKeyFlow(
                         flowID: flowID,
                         response: self.makeBlockedHotKeyResponse(
@@ -1301,7 +1447,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                             receiptObservation: receiptObservation,
                             microphonePermissionStatus: permissionStatus,
                             blockedReason: blockedReason,
-                            requestedMicrophonePermission: requestedPermission
+                            requestedMicrophonePermission: requestedPermission,
+                            localUserFeedback: .blockedPanel
                         )
                     )
                     return
@@ -1320,14 +1467,16 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                         trigger: .globalHotKey,
                         textLength: 0,
                         recordingDurationMs: 0,
-                        recordingFilePath: session.fileURL.path
+                        recordingFilePath: session.fileURL.path,
+                        microphonePermissionStatus: permissionStatus,
+                        requestedMicrophonePermission: requestedPermission
                     )
 
                     if self.pendingStopAfterRecordingStart || !self.isHotKeyHeld {
                         self.stopActiveRecordingSession(session)
                     }
                 } catch {
-                    NSSound.beep()
+                    self.presentRecordingStartFailureUI(error: "\(error)")
                     self.completeGlobalHotKeyFlow(
                         flowID: flowID,
                         response: self.makeFailedHotKeyResponse(
@@ -1335,6 +1484,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                             receiptObservation: receiptObservation,
                             microphonePermissionStatus: permissionStatus,
                             requestedMicrophonePermission: requestedPermission,
+                            localUserFeedback: .blockedPanel,
                             error: "\(error)"
                         )
                     )
@@ -1350,6 +1500,11 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     ) throws -> ActiveRecordingSession {
         guard hasAvailableMicrophoneDevice() else {
             throw ProductRuntimeError.noMicrophoneDevice
+        }
+
+        if runtimeMicrophoneRecorderStartFailureOverride ||
+            ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_RECORDER_START_FAILURE"] == "1" {
+            throw ProductRuntimeError.microphoneRecordingStartFailed
         }
 
         let fileURL = URL(fileURLWithPath: paths.recordingAudioFile(for: flowID))
@@ -1407,7 +1562,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             trigger: .globalHotKey,
             textLength: 0,
             recordingDurationMs: measuredDurationMs,
-            recordingFilePath: session.fileURL.path
+            recordingFilePath: session.fileURL.path,
+            microphonePermissionStatus: .granted,
+            requestedMicrophonePermission: session.requestedMicrophonePermission
         )
 
         workerQueue.async {
@@ -1472,6 +1629,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                     recordingArtifact: artifact,
                     transcriptionArtifact: transcriptionArtifact,
                     transcribingPlaceholder: false,
+                    localUserFeedback: nil,
                     error: transcriptionArtifact.error
                 )
             }
@@ -1494,7 +1652,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             publishInsertingFlowState(
                 flowID: session.flowID,
                 recordingArtifact: artifact,
-                transcriptionArtifact: transcriptionArtifact
+                transcriptionArtifact: transcriptionArtifact,
+                requestedMicrophonePermission: session.requestedMicrophonePermission
             )
 
             let receiptObservation = ReceiptObservation(
@@ -1554,6 +1713,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 recordingArtifact: nil,
                 transcriptionArtifact: nil,
                 transcribingPlaceholder: false,
+                localUserFeedback: nil,
                 error: "\(error)"
             )
         }
@@ -1562,7 +1722,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private func publishInsertingFlowState(
         flowID: String,
         recordingArtifact: RecordingArtifact,
-        transcriptionArtifact: TranscriptionArtifact
+        transcriptionArtifact: TranscriptionArtifact,
+        requestedMicrophonePermission: Bool
     ) {
         let update = {
             self.transitionFlow(
@@ -1573,7 +1734,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 transcriptionInsertGate: .passed,
                 gatedTranscriptionFeedback: nil,
                 recordingDurationMs: recordingArtifact.durationMs,
-                recordingFilePath: recordingArtifact.filePath
+                recordingFilePath: recordingArtifact.filePath,
+                microphonePermissionStatus: .granted,
+                requestedMicrophonePermission: requestedMicrophonePermission
             )
         }
 
@@ -1649,6 +1812,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingArtifact: recordingArtifact,
             transcriptionArtifact: transcriptionArtifact,
             transcribingPlaceholder: false,
+            localUserFeedback: insertResponse.localUserFeedback,
             error: insertResponse.error
         )
     }
@@ -1700,6 +1864,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingArtifact: recordingArtifact,
             transcriptionArtifact: transcriptionArtifact,
             transcribingPlaceholder: false,
+            localUserFeedback: gatedTranscriptionFeedback == nil ? nil : .systemBeep,
             error: nil
         )
     }
@@ -1909,7 +2074,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         receiptObservation: ReceiptObservation,
         microphonePermissionStatus: MicrophonePermissionStatus,
         blockedReason: String,
-        requestedMicrophonePermission: Bool
+        requestedMicrophonePermission: Bool,
+        localUserFeedback: LocalUserFeedback?
     ) -> ProductResponse {
         ProductResponse(
             id: flowID,
@@ -1948,6 +2114,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingArtifact: nil,
             transcriptionArtifact: nil,
             transcribingPlaceholder: false,
+            localUserFeedback: localUserFeedback,
             error: nil
         )
     }
@@ -1957,6 +2124,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         receiptObservation: ReceiptObservation,
         microphonePermissionStatus: MicrophonePermissionStatus,
         requestedMicrophonePermission: Bool,
+        localUserFeedback: LocalUserFeedback?,
         error: String
     ) -> ProductResponse {
         ProductResponse(
@@ -1996,6 +2164,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingArtifact: nil,
             transcriptionArtifact: nil,
             transcribingPlaceholder: false,
+            localUserFeedback: localUserFeedback,
             error: error
         )
     }
@@ -2016,6 +2185,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         lastResponseStatus = response.status
         lastTranscriptionInsertGate = response.transcriptionInsertGate
         lastGatedTranscriptionFeedback = response.gatedTranscriptionFeedback
+        lastRequestedMicrophonePermission = response.requestedMicrophonePermission
+        lastLocalUserFeedback = response.localUserFeedback
         lastBlockedReason = response.blockedReason
         lastError = response.error
         lastRecording = response.recordingArtifact
@@ -2031,7 +2202,10 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             blockedReason: response.blockedReason,
             error: response.error,
             recordingDurationMs: response.recordingArtifact?.durationMs,
-            recordingFilePath: response.recordingArtifact?.filePath
+            recordingFilePath: response.recordingArtifact?.filePath,
+            microphonePermissionStatus: response.microphonePermissionStatus,
+            requestedMicrophonePermission: response.requestedMicrophonePermission,
+            localUserFeedback: response.localUserFeedback
         )
 
         processNextRequestIfNeeded()
@@ -2060,7 +2234,10 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         blockedReason: String? = nil,
         error: String? = nil,
         recordingDurationMs: Int? = nil,
-        recordingFilePath: String? = nil
+        recordingFilePath: String? = nil,
+        microphonePermissionStatus: MicrophonePermissionStatus? = nil,
+        requestedMicrophonePermission: Bool = false,
+        localUserFeedback: LocalUserFeedback? = nil
     ) {
         let snapshot = ProductFlowSnapshot(
             id: id,
@@ -2073,7 +2250,10 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             blockedReason: blockedReason,
             error: error,
             recordingDurationMs: recordingDurationMs,
-            recordingFilePath: recordingFilePath
+            recordingFilePath: recordingFilePath,
+            microphonePermissionStatus: microphonePermissionStatus ?? currentMicrophonePermissionStatus(),
+            requestedMicrophonePermission: requestedMicrophonePermission,
+            localUserFeedback: localUserFeedback
         )
         flowSnapshot = snapshot
 
@@ -2089,7 +2269,10 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 blockedReason: blockedReason,
                 error: error,
                 recordingDurationMs: recordingDurationMs,
-                recordingFilePath: recordingFilePath
+                recordingFilePath: recordingFilePath,
+                microphonePermissionStatus: snapshot.microphonePermissionStatus,
+                requestedMicrophonePermission: requestedMicrophonePermission,
+                localUserFeedback: localUserFeedback
             )
             try? appendJSONLine(event, to: paths.flowEventsLogFile)
         }
@@ -2147,6 +2330,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             lastResponseStatus: lastResponseStatus,
             lastTranscriptionInsertGate: lastTranscriptionInsertGate,
             lastGatedTranscriptionFeedback: lastGatedTranscriptionFeedback,
+            lastRequestedMicrophonePermission: lastRequestedMicrophonePermission,
+            lastLocalUserFeedback: lastLocalUserFeedback,
             lastBlockedReason: lastBlockedReason,
             lastError: lastError,
             microphonePermissionStatus: currentMicrophonePermissionStatus(),
@@ -2232,6 +2417,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 recordingArtifact: nil,
                 transcriptionArtifact: nil,
                 transcribingPlaceholder: false,
+                localUserFeedback: nil,
                 error: "\(error)"
             )
         }
@@ -2283,6 +2469,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingArtifact: nil,
             transcriptionArtifact: nil,
             transcribingPlaceholder: false,
+            localUserFeedback: nil,
             error: nil
         )
     }
@@ -2378,6 +2565,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 recordingArtifact: nil,
                 transcriptionArtifact: nil,
                 transcribingPlaceholder: false,
+                localUserFeedback: presentsBlockedUI ? .blockedPanel : .systemBeep,
                 error: nil
             )
         }
@@ -2437,6 +2625,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 recordingArtifact: nil,
                 transcriptionArtifact: nil,
                 transcribingPlaceholder: false,
+                localUserFeedback: nil,
                 error: "\(error)"
             )
         }
@@ -2485,6 +2674,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingArtifact: nil,
             transcriptionArtifact: nil,
             transcribingPlaceholder: false,
+            localUserFeedback: nil,
             error: nil
         )
     }
@@ -2530,6 +2720,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingArtifact: nil,
             transcriptionArtifact: nil,
             transcribingPlaceholder: false,
+            localUserFeedback: nil,
             error: nil
         )
     }
@@ -2556,6 +2747,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         lastResponseStatus = response.status
         lastTranscriptionInsertGate = response.transcriptionInsertGate
         lastGatedTranscriptionFeedback = response.gatedTranscriptionFeedback
+        lastRequestedMicrophonePermission = response.requestedMicrophonePermission
+        lastLocalUserFeedback = response.localUserFeedback
         lastBlockedReason = response.blockedReason
         lastError = response.error
         if let recordingArtifact = response.recordingArtifact {
@@ -2592,14 +2785,41 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             }
 
             self.launchBlockedUIHasBeenPresented = self.launchBlockedUIHasBeenPresented || triggeredByLaunch
-            NSApp.setActivationPolicy(.accessory)
             let bundleName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "PushWrite"
-            let controller = AccessibilityBlockedWindowController(
-                bundleName: bundleName,
-                blockedReason: ProductRuntimeError.accessibilityDenied.description,
-                onOpenSettings: { [weak self] in
+            self.presentFeedbackPanel(
+                windowTitle: "PushWrite setup required",
+                title: "Accessibility access required",
+                message: "\(bundleName) cannot insert text until Accessibility is enabled for this app in System Settings > Privacy & Security > Accessibility.\n\n\(ProductRuntimeError.accessibilityDenied.description)",
+                primaryButtonTitle: "Open System Settings",
+                dismissButtonTitle: "Not Now",
+                onPrimaryAction: { [weak self] in
                     self?.openAccessibilitySettings()
-                },
+                }
+            )
+        }
+    }
+
+    private func presentFeedbackPanel(
+        windowTitle: String,
+        title: String,
+        message: String,
+        primaryButtonTitle: String?,
+        dismissButtonTitle: String,
+        onPrimaryAction: (() -> Void)?
+    ) {
+        DispatchQueue.main.async {
+            if self.blockedWindowController != nil {
+                return
+            }
+
+            NSApp.setActivationPolicy(.accessory)
+            let controller = ProductFeedbackWindowController(
+                windowTitle: windowTitle,
+                title: title,
+                message: message,
+                primaryButtonTitle: primaryButtonTitle,
+                dismissButtonTitle: dismissButtonTitle,
+                onPrimaryAction: onPrimaryAction,
                 onDismiss: { [weak self] in
                     self?.blockedWindowController = nil
                     if !isAccessibilityTrusted(prompt: false) {
@@ -2612,6 +2832,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             controller.showWindow(nil)
             controller.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            try? self.writeState(running: true)
         }
     }
 
@@ -2625,6 +2846,13 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
     private func openAccessibilitySettings() {
         guard let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+            return
+        }
+        NSWorkspace.shared.open(settingsURL)
+    }
+
+    private func openMicrophoneSettings() {
+        guard let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") else {
             return
         }
         NSWorkspace.shared.open(settingsURL)
@@ -2643,6 +2871,10 @@ runtimeAccessibilityBlockedOverride = launchOptions.forceAccessibilityBlocked
 runtimeAccessibilityTrustedOverride = launchOptions.forceAccessibilityTrusted
 runtimeMicrophoneDeniedOverride = launchOptions.forceMicrophoneDenied
 runtimeNoMicrophoneDeviceOverride = launchOptions.forceNoMicrophoneDevice
+runtimeMicrophoneRecorderStartFailureOverride = launchOptions.forceMicrophoneRecorderStartFailure
+runtimeForcedMicrophonePermissionStatus = launchOptions.forcedMicrophonePermissionStatus
+runtimeForcedMicrophonePermissionRequestResult = launchOptions.forcedMicrophonePermissionRequestResult
+runtimeCurrentMicrophonePermissionStatusOverride = launchOptions.forcedMicrophonePermissionStatus
 
 let app = NSApplication.shared
 let delegate = PushWriteAppDelegate(launchOptions: launchOptions)
