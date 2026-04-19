@@ -311,7 +311,9 @@ struct TranscriptionArtifact: Codable {
     let textFilePath: String
     let rawOutputJSONPath: String
     let cliPath: String
+    let cliResolutionSource: String
     let modelPath: String
+    let modelResolutionSource: String
     let modelName: String
     let language: String
     let status: TranscriptionStatus
@@ -321,6 +323,22 @@ struct TranscriptionArtifact: Codable {
     let completedAt: String
     let durationMs: Int
     let error: String?
+}
+
+enum WhisperResourceSource: String {
+    case bundledProductResource
+    case explicitOverride
+    case repoFallback
+}
+
+struct ResolvedWhisperPath {
+    let path: String
+    let source: WhisperResourceSource
+}
+
+struct ResolvedWhisperRuntime {
+    let cli: ResolvedWhisperPath
+    let model: ResolvedWhisperPath
 }
 
 struct TranscriptionResult: Codable {
@@ -750,7 +768,29 @@ struct RecordingFileDetails {
     let fileSizeBytes: UInt64
 }
 
-func defaultWhisperCLIPath() -> String {
+func bundledWhisperCLIPath() -> String {
+    guard let resourceURL = Bundle.main.resourceURL else {
+        return ""
+    }
+    return resourceURL
+        .appendingPathComponent("whisper", isDirectory: true)
+        .appendingPathComponent("bin", isDirectory: true)
+        .appendingPathComponent("whisper-cli", isDirectory: false)
+        .path
+}
+
+func bundledWhisperModelPath() -> String {
+    guard let resourceURL = Bundle.main.resourceURL else {
+        return ""
+    }
+    return resourceURL
+        .appendingPathComponent("whisper", isDirectory: true)
+        .appendingPathComponent("models", isDirectory: true)
+        .appendingPathComponent("ggml-tiny.bin", isDirectory: false)
+        .path
+}
+
+func repoFallbackWhisperCLIPath() -> String {
     Bundle.main.bundleURL
         .deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -763,7 +803,7 @@ func defaultWhisperCLIPath() -> String {
         .path
 }
 
-func defaultWhisperModelPath() -> String {
+func repoFallbackWhisperModelPath() -> String {
     Bundle.main.bundleURL
         .deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -773,22 +813,77 @@ func defaultWhisperModelPath() -> String {
         .path
 }
 
-func resolveWhisperCLIPath(launchOptions: LaunchOptions) throws -> String {
-    let explicitPath = launchOptions.whisperCLIPath?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let path = (explicitPath?.isEmpty == false ? explicitPath : defaultWhisperCLIPath()) ?? defaultWhisperCLIPath()
-    guard FileManager.default.isExecutableFile(atPath: path) else {
-        throw ProductRuntimeError.missingWhisperCLI(path)
+func resolveWhisperCLIPath(launchOptions: LaunchOptions) throws -> ResolvedWhisperPath {
+    let bundledPath = bundledWhisperCLIPath()
+    if !bundledPath.isEmpty, FileManager.default.fileExists(atPath: bundledPath) {
+        guard FileManager.default.isExecutableFile(atPath: bundledPath) else {
+            throw ProductRuntimeError.missingWhisperCLI(
+                "Bundled whisper-cli exists but is not executable: \(bundledPath)"
+            )
+        }
+        return ResolvedWhisperPath(path: bundledPath, source: .bundledProductResource)
     }
-    return path
+
+    let explicitPath = launchOptions.whisperCLIPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let explicitPath, !explicitPath.isEmpty {
+        guard FileManager.default.fileExists(atPath: explicitPath) else {
+            throw ProductRuntimeError.missingWhisperCLI(explicitPath)
+        }
+        guard FileManager.default.isExecutableFile(atPath: explicitPath) else {
+            throw ProductRuntimeError.missingWhisperCLI(
+                "Configured whisper-cli exists but is not executable: \(explicitPath)"
+            )
+        }
+        return ResolvedWhisperPath(path: explicitPath, source: .explicitOverride)
+    }
+
+    let repoFallbackPath = repoFallbackWhisperCLIPath()
+    if ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_REPO_WHISPER_FALLBACK"] == "1" {
+        if FileManager.default.fileExists(atPath: repoFallbackPath) {
+            guard FileManager.default.isExecutableFile(atPath: repoFallbackPath) else {
+                throw ProductRuntimeError.missingWhisperCLI(
+                    "Repo fallback whisper-cli exists but is not executable: \(repoFallbackPath)"
+                )
+            }
+            return ResolvedWhisperPath(path: repoFallbackPath, source: .repoFallback)
+        }
+    }
+
+    throw ProductRuntimeError.missingWhisperCLI(
+        "Could not resolve whisper-cli. Checked bundled path \(bundledPath), explicit override, repo fallback \(repoFallbackPath) (only when PUSHWRITE_ALLOW_REPO_WHISPER_FALLBACK=1)."
+    )
 }
 
-func resolveWhisperModelPath(launchOptions: LaunchOptions) throws -> String {
-    let explicitPath = launchOptions.whisperModelPath?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let path = (explicitPath?.isEmpty == false ? explicitPath : defaultWhisperModelPath()) ?? defaultWhisperModelPath()
-    guard FileManager.default.fileExists(atPath: path) else {
-        throw ProductRuntimeError.missingWhisperModel(path)
+func resolveWhisperModelPath(launchOptions: LaunchOptions) throws -> ResolvedWhisperPath {
+    let bundledPath = bundledWhisperModelPath()
+    if !bundledPath.isEmpty, FileManager.default.fileExists(atPath: bundledPath) {
+        return ResolvedWhisperPath(path: bundledPath, source: .bundledProductResource)
     }
-    return path
+
+    let explicitPath = launchOptions.whisperModelPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let explicitPath, !explicitPath.isEmpty {
+        guard FileManager.default.fileExists(atPath: explicitPath) else {
+            throw ProductRuntimeError.missingWhisperModel(explicitPath)
+        }
+        return ResolvedWhisperPath(path: explicitPath, source: .explicitOverride)
+    }
+
+    let repoFallbackPath = repoFallbackWhisperModelPath()
+    if ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_REPO_WHISPER_FALLBACK"] == "1" {
+        if FileManager.default.fileExists(atPath: repoFallbackPath) {
+            return ResolvedWhisperPath(path: repoFallbackPath, source: .repoFallback)
+        }
+    }
+
+    throw ProductRuntimeError.missingWhisperModel(
+        "Could not resolve whisper model. Checked bundled path \(bundledPath), explicit override, repo fallback \(repoFallbackPath) (only when PUSHWRITE_ALLOW_REPO_WHISPER_FALLBACK=1)."
+    )
+}
+
+func resolveWhisperRuntime(launchOptions: LaunchOptions) throws -> ResolvedWhisperRuntime {
+    let cli = try resolveWhisperCLIPath(launchOptions: launchOptions)
+    let model = try resolveWhisperModelPath(launchOptions: launchOptions)
+    return ResolvedWhisperRuntime(cli: cli, model: model)
 }
 
 func normalizedWhisperLanguage(_ language: String) -> String {
@@ -2361,8 +2456,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         session: ActiveRecordingSession,
         recordingArtifact: RecordingArtifact
     ) -> TranscriptionArtifact {
-        let configuredCLIPath = optionalNonEmptyTrimmed(launchOptions.whisperCLIPath) ?? defaultWhisperCLIPath()
-        let configuredModelPath = optionalNonEmptyTrimmed(launchOptions.whisperModelPath) ?? defaultWhisperModelPath()
+        let configuredCLIPath = optionalNonEmptyTrimmed(launchOptions.whisperCLIPath) ?? bundledWhisperCLIPath()
+        let configuredModelPath = optionalNonEmptyTrimmed(launchOptions.whisperModelPath) ?? bundledWhisperModelPath()
         let configuredLanguage = normalizedWhisperLanguage(launchOptions.whisperLanguage)
         let artifactPath = paths.transcriptionArtifactFile(for: session.flowID)
         let textFilePath = paths.transcriptionTextFile(for: session.flowID)
@@ -2371,8 +2466,14 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         let started = Date()
 
         do {
-            let cliPath = try resolveWhisperCLIPath(launchOptions: launchOptions)
-            let modelPath = try resolveWhisperModelPath(launchOptions: launchOptions)
+            let resolvedRuntime = try resolveWhisperRuntime(launchOptions: launchOptions)
+            let cliPath = resolvedRuntime.cli.path
+            let modelPath = resolvedRuntime.model.path
+            logHotKeyRecordingEvent(
+                flowID: session.flowID,
+                event: "transcription-runtime-resolved",
+                detail: "cliSource=\(resolvedRuntime.cli.source.rawValue),modelSource=\(resolvedRuntime.model.source.rawValue),cliPath=\(cliPath),modelPath=\(modelPath)"
+            )
             let transcriptText = try runWhisperCLI(
                 cliPath: cliPath,
                 modelPath: modelPath,
@@ -2392,7 +2493,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 textFilePath: textFilePath,
                 rawOutputJSONPath: rawOutputJSONPath,
                 cliPath: cliPath,
+                cliResolutionSource: resolvedRuntime.cli.source.rawValue,
                 modelPath: modelPath,
+                modelResolutionSource: resolvedRuntime.model.source.rawValue,
                 modelName: URL(fileURLWithPath: modelPath).lastPathComponent,
                 language: resolvedLanguage,
                 status: .succeeded,
@@ -2414,7 +2517,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 textFilePath: textFilePath,
                 rawOutputJSONPath: rawOutputJSONPath,
                 cliPath: configuredCLIPath,
+                cliResolutionSource: "unresolved",
                 modelPath: configuredModelPath,
+                modelResolutionSource: "unresolved",
                 modelName: URL(fileURLWithPath: configuredModelPath).lastPathComponent,
                 language: configuredLanguage,
                 status: .failed,
