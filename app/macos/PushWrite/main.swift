@@ -67,6 +67,7 @@ var runtimeAccessibilityTrustedOverride = false
 var runtimeMicrophoneDeniedOverride = false
 var runtimeNoMicrophoneDeviceOverride = false
 var runtimeMicrophoneRecorderStartFailureOverride = false
+var runtimeSyntheticPasteFailureOverride = false
 var runtimeForcedMicrophonePermissionStatus: MicrophonePermissionStatus?
 var runtimeForcedMicrophonePermissionRequestResult: MicrophonePermissionStatus?
 var runtimeCurrentMicrophonePermissionStatusOverride: MicrophonePermissionStatus?
@@ -83,6 +84,7 @@ struct LaunchOptions {
     let forceMicrophoneDenied: Bool
     let forceNoMicrophoneDevice: Bool
     let forceMicrophoneRecorderStartFailure: Bool
+    let forceSyntheticPasteFailure: Bool
     let forcedMicrophonePermissionStatus: MicrophonePermissionStatus?
     let forcedMicrophonePermissionRequestResult: MicrophonePermissionStatus?
 }
@@ -217,10 +219,77 @@ enum TranscriptionStatus: String, Codable {
     case failed
 }
 
+enum TranscriptionResultStatus: String, Codable {
+    case succeeded
+    case failed
+    case skipped
+}
+
+enum TranscriptionSkipReason: String, Codable {
+    case emptyRecording
+    case tooShortRecording
+}
+
 enum TranscriptionInsertGate: String, Codable {
     case passed
+    case transcriptionSkipped
+    case transcriptionFailed
+    case emptyTranscriptionText
+    case whitespaceOnlyTranscriptionText
     case empty
     case tooShort
+}
+
+enum InsertResultStatus: String, Codable {
+    case gated
+    case succeeded
+    case failed
+}
+
+struct InsertResult: Codable {
+    let id: String
+    let flowID: String
+    let transcriptionResultID: String
+    let transcriptionResultStatus: TranscriptionResultStatus
+    let transcriptionAttempted: Bool
+    let transcriptionTextLength: Int
+    let insertAttempted: Bool
+    let status: InsertResultStatus
+    let gate: TranscriptionInsertGate
+    let gateReason: String?
+    let error: String?
+    let insertedTextLength: Int
+    let insertRoute: InsertRoute?
+    let insertSource: InsertSource
+    let startedAt: String
+    let completedAt: String
+    let durationMs: Int
+}
+
+enum TranscriptionInsertGateEvaluation {
+    case passed(text: String)
+    case gated(reason: TranscriptionInsertGate)
+}
+
+func evaluateTranscriptionInsertGate(for result: TranscriptionResult) -> TranscriptionInsertGateEvaluation {
+    guard result.status == .succeeded else {
+        return result.status == .skipped
+            ? .gated(reason: .transcriptionSkipped)
+            : .gated(reason: .transcriptionFailed)
+    }
+    guard result.transcriptionAttempted else {
+        return .gated(reason: .transcriptionSkipped)
+    }
+    guard let text = result.text else {
+        return .gated(reason: .emptyTranscriptionText)
+    }
+    guard !text.isEmpty else {
+        return .gated(reason: .emptyTranscriptionText)
+    }
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return .gated(reason: .whitespaceOnlyTranscriptionText)
+    }
+    return .passed(text: text)
 }
 
 enum GatedTranscriptionFeedback: String, Codable {
@@ -245,6 +314,23 @@ struct TranscriptionArtifact: Codable {
     let completedAt: String
     let durationMs: Int
     let error: String?
+}
+
+struct TranscriptionResult: Codable {
+    let id: String
+    let recordingID: String
+    let recordingFilePath: String
+    let recordingUsability: RecordingUsability
+    let transcriptionAttempted: Bool
+    let succeeded: Bool
+    let status: TranscriptionResultStatus
+    let text: String?
+    let textLength: Int
+    let skipReason: TranscriptionSkipReason?
+    let error: String?
+    let startedAt: String
+    let completedAt: String
+    let durationMs: Int
 }
 
 struct ProductRequest: Codable {
@@ -341,6 +427,10 @@ struct ProductPaths {
     let recordingPrototypeLogFile: String
     let audioProcessingHandoffLogFile: String
     let lastAudioProcessingHandoffFile: String
+    let transcriptionResultsLogFile: String
+    let lastTranscriptionResultFile: String
+    let insertResultsLogFile: String
+    let lastInsertResultFile: String
 
     init(runtimeDir: String) {
         self.runtimeDir = runtimeDir
@@ -356,6 +446,10 @@ struct ProductPaths {
         self.recordingPrototypeLogFile = "\(runtimeDir)/logs/hotkey-recording-prototype.jsonl"
         self.audioProcessingHandoffLogFile = "\(runtimeDir)/logs/audio-processing-handoffs.jsonl"
         self.lastAudioProcessingHandoffFile = "\(runtimeDir)/logs/last-audio-processing-handoff.json"
+        self.transcriptionResultsLogFile = "\(runtimeDir)/logs/transcription-results.jsonl"
+        self.lastTranscriptionResultFile = "\(runtimeDir)/logs/last-transcription-result.json"
+        self.insertResultsLogFile = "\(runtimeDir)/logs/insert-results.jsonl"
+        self.lastInsertResultFile = "\(runtimeDir)/logs/last-insert-result.json"
     }
 
     func requestFile(for id: String) -> String {
@@ -410,6 +504,8 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
     case transcriptionLaunchFailed(String)
     case transcriptionProcessFailed(String)
     case missingTranscriptionOutput(String)
+    case emptyTranscriptionOutput
+    case forcedSyntheticPasteFailure
 
     var description: String {
         switch self {
@@ -449,6 +545,10 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
             return "whisper.cpp inference failed: \(message)"
         case let .missingTranscriptionOutput(path):
             return "whisper.cpp did not produce the expected transcription output at \(path)."
+        case .emptyTranscriptionOutput:
+            return "whisper.cpp returned an empty transcription result."
+        case .forcedSyntheticPasteFailure:
+            return "Synthetic Cmd+V paste was forced to fail for runtime validation."
         }
     }
 }
@@ -497,6 +597,8 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
     var forceNoMicrophoneDevice = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_NO_MICROPHONE_DEVICE"] == "1"
     var forceMicrophoneRecorderStartFailure =
         ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_RECORDER_START_FAILURE"] == "1"
+    var forceSyntheticPasteFailure =
+        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_SYNTHETIC_PASTE_FAILURE"] == "1"
     var forcedMicrophonePermissionStatus = parseMicrophonePermissionStatusOverride(
         ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_PERMISSION_STATUS"]
     )
@@ -539,6 +641,8 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
             forceNoMicrophoneDevice = true
         case "--force-microphone-recorder-start-failure":
             forceMicrophoneRecorderStartFailure = true
+        case "--force-synthetic-paste-failure":
+            forceSyntheticPasteFailure = true
         case "--force-microphone-permission-status":
             forcedMicrophonePermissionStatus = try requireMicrophonePermissionStatus(
                 parseMicrophonePermissionStatusOverride(try requireValue(for: argument)),
@@ -571,6 +675,7 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
         forceMicrophoneDenied: forceMicrophoneDenied,
         forceNoMicrophoneDevice: forceNoMicrophoneDevice,
         forceMicrophoneRecorderStartFailure: forceMicrophoneRecorderStartFailure,
+        forceSyntheticPasteFailure: forceSyntheticPasteFailure,
         forcedMicrophonePermissionStatus: forcedMicrophonePermissionStatus,
         forcedMicrophonePermissionRequestResult: forcedMicrophonePermissionRequestResult
     )
@@ -692,14 +797,12 @@ func optionalNonEmptyTrimmed(_ value: String?) -> String? {
     return trimmed.isEmpty ? nil : trimmed
 }
 
-func transcriptionInsertGate(for text: String) -> TranscriptionInsertGate {
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else {
-        return .empty
+func trimmingTrailingLineBreaks(_ text: String) -> String {
+    var normalized = text
+    while normalized.last == "\n" || normalized.last == "\r" {
+        normalized.removeLast()
     }
-
-    let meaningfulCharacterCount = trimmed.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.count
-    return meaningfulCharacterCount < 2 ? .tooShort : .passed
+    return normalized
 }
 
 func classifyRecordingUsability(
@@ -940,6 +1043,11 @@ func writePlainTextToPasteboard(_ text: String) {
 }
 
 func postSyntheticPaste() throws {
+    if runtimeSyntheticPasteFailureOverride ||
+        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_SYNTHETIC_PASTE_FAILURE"] == "1" {
+        throw ProductRuntimeError.forcedSyntheticPasteFailure
+    }
+
     guard let source = CGEventSource(stateID: .combinedSessionState) else {
         throw ProductRuntimeError.eventSourceUnavailable
     }
@@ -1640,10 +1748,12 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     ) -> ProductResponse {
         let recordingStoppedAt = isoTimestamp()
         let productFrontmostAtReceipt = isProductFrontmost(session.focusAtStart)
+        var recordedArtifact: RecordingArtifact?
 
         do {
             try replaceRecordingArtifactWithFixtureIfNeeded(session: session)
             let artifact = try makeRecordingArtifact(session: session, measuredDurationMs: measuredDurationMs)
+            recordedArtifact = artifact
             logHotKeyRecordingEvent(flowID: session.flowID, event: "audio-handoff-started", detail: artifact.filePath)
             let handoff = try handoffAudioForProcessing(recordingArtifact: artifact)
             logHotKeyRecordingEvent(
@@ -1651,46 +1761,22 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 event: "audio-handoff-succeeded",
                 detail: "usability=\(handoff.usability.rawValue)"
             )
-            return ProductResponse(
-                id: session.flowID,
-                kind: .recordAudio,
-                timestamp: isoTimestamp(),
-                productBundleID: Bundle.main.bundleIdentifier,
-                productPID: ProcessInfo.processInfo.processIdentifier,
-                status: .succeeded,
-                accessibilityTrusted: true,
-                microphonePermissionStatus: .granted,
-                requestedMicrophonePermission: session.requestedMicrophonePermission,
-                promptAccessibility: false,
-                blockedReason: nil,
-                settleDelayMs: defaults.settle,
-                pasteDelayMs: defaults.paste,
-                restoreClipboard: false,
-                restoreDelayMs: defaults.restore,
-                textLength: 0,
-                transcriptionInsertGate: nil,
-                gatedTranscriptionFeedback: nil,
-                hotKeyInteractionModel: .pressAndHold,
-                insertRoute: nil,
-                insertSource: nil,
-                focusAtReceipt: session.focusAtStart,
-                focusBeforePaste: nil,
-                focusAfterPaste: nil,
+            let transcriptionOutcome = try processAudioProcessingHandoff(session: session, handoff: handoff)
+            let response = completeTranscriptionInsertFlow(
+                session: session,
+                recordingStoppedAt: recordingStoppedAt,
                 focusAtStop: focusAtStop,
                 productFrontmostAtReceipt: productFrontmostAtReceipt,
-                productFrontmostBeforePaste: false,
-                productFrontmostAfterPaste: false,
-                originalPasteboard: nil,
-                syntheticPastePosted: false,
-                clipboardRestored: false,
-                recordingStartedAt: session.startedAtTimestamp,
-                recordingStoppedAt: recordingStoppedAt,
                 recordingArtifact: artifact,
-                transcriptionArtifact: nil,
-                transcribingPlaceholder: false,
-                localUserFeedback: nil,
-                error: nil
+                transcriptionResult: transcriptionOutcome.result,
+                transcriptionArtifact: transcriptionOutcome.artifact
             )
+            logHotKeyRecordingEvent(
+                flowID: session.flowID,
+                event: "processing-flow-completed",
+                detail: "transcriptionStatus=\(transcriptionOutcome.result.status.rawValue),insertStatus=\(response.status.rawValue),insertGate=\(response.transcriptionInsertGate?.rawValue ?? "none")"
+            )
+            return response
         } catch {
             logHotKeyRecordingEvent(
                 flowID: session.flowID,
@@ -1731,7 +1817,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 clipboardRestored: false,
                 recordingStartedAt: session.startedAtTimestamp,
                 recordingStoppedAt: recordingStoppedAt,
-                recordingArtifact: nil,
+                recordingArtifact: recordedArtifact,
                 transcriptionArtifact: nil,
                 transcribingPlaceholder: false,
                 localUserFeedback: nil,
@@ -1758,51 +1844,309 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         return handoff
     }
 
-    private func publishInsertingFlowState(
-        flowID: String,
-        recordingArtifact: RecordingArtifact,
-        transcriptionArtifact: TranscriptionArtifact,
-        requestedMicrophonePermission: Bool
-    ) {
-        let update = {
-            self.transitionFlow(
-                to: .inserting,
-                id: flowID,
-                trigger: .globalHotKey,
-                textLength: transcriptionArtifact.textLength,
-                transcriptionInsertGate: .passed,
-                gatedTranscriptionFeedback: nil,
-                recordingDurationMs: recordingArtifact.durationMs,
-                recordingFilePath: recordingArtifact.filePath,
-                microphonePermissionStatus: .granted,
-                requestedMicrophonePermission: requestedMicrophonePermission
-            )
-        }
+    private func processAudioProcessingHandoff(
+        session: ActiveRecordingSession,
+        handoff: AudioProcessingHandoff
+    ) throws -> (result: TranscriptionResult, artifact: TranscriptionArtifact?) {
+        logHotKeyRecordingEvent(
+            flowID: session.flowID,
+            event: "transcription-handoff-received",
+            detail: "usability=\(handoff.usability.rawValue)"
+        )
 
-        if Thread.isMainThread {
-            update()
-        } else {
-            DispatchQueue.main.sync(execute: update)
+        switch handoff.usability {
+        case .empty:
+            let result = makeSkippedTranscriptionResult(
+                handoff: handoff,
+                skipReason: .emptyRecording
+            )
+            try persistTranscriptionResult(result)
+            logHotKeyRecordingEvent(
+                flowID: session.flowID,
+                event: "transcription-skipped",
+                detail: "reason=\(TranscriptionSkipReason.emptyRecording.rawValue)"
+            )
+            return (result, nil)
+        case .tooShort:
+            let result = makeSkippedTranscriptionResult(
+                handoff: handoff,
+                skipReason: .tooShortRecording
+            )
+            try persistTranscriptionResult(result)
+            logHotKeyRecordingEvent(
+                flowID: session.flowID,
+                event: "transcription-skipped",
+                detail: "reason=\(TranscriptionSkipReason.tooShortRecording.rawValue)"
+            )
+            return (result, nil)
+        case .usable:
+            logHotKeyRecordingEvent(flowID: session.flowID, event: "transcription-started", detail: nil)
+            let transcriptionArtifact = transcribeRecording(
+                session: session,
+                recordingArtifact: handoff.recordingArtifact
+            )
+            if transcriptionArtifact.status == .succeeded {
+                let result = TranscriptionResult(
+                    id: handoff.id,
+                    recordingID: handoff.recordingArtifact.id,
+                    recordingFilePath: handoff.recordingArtifact.filePath,
+                    recordingUsability: handoff.usability,
+                    transcriptionAttempted: true,
+                    succeeded: true,
+                    status: .succeeded,
+                    text: transcriptionArtifact.text,
+                    textLength: transcriptionArtifact.textLength,
+                    skipReason: nil,
+                    error: nil,
+                    startedAt: transcriptionArtifact.startedAt,
+                    completedAt: transcriptionArtifact.completedAt,
+                    durationMs: transcriptionArtifact.durationMs
+                )
+                try persistTranscriptionResult(result)
+                logHotKeyRecordingEvent(
+                    flowID: session.flowID,
+                    event: "transcription-succeeded",
+                    detail: "textLength=\(transcriptionArtifact.textLength)"
+                )
+                return (result, transcriptionArtifact)
+            }
+
+            let fallbackError = "whisper.cpp transcription failed without an explicit error message."
+            let result = TranscriptionResult(
+                id: handoff.id,
+                recordingID: handoff.recordingArtifact.id,
+                recordingFilePath: handoff.recordingArtifact.filePath,
+                recordingUsability: handoff.usability,
+                transcriptionAttempted: true,
+                succeeded: false,
+                status: .failed,
+                text: nil,
+                textLength: transcriptionArtifact.textLength,
+                skipReason: nil,
+                error: transcriptionArtifact.error ?? fallbackError,
+                startedAt: transcriptionArtifact.startedAt,
+                completedAt: transcriptionArtifact.completedAt,
+                durationMs: transcriptionArtifact.durationMs
+            )
+            try persistTranscriptionResult(result)
+            logHotKeyRecordingEvent(
+                flowID: session.flowID,
+                event: "transcription-failed",
+                detail: result.error
+            )
+            return (result, transcriptionArtifact)
         }
     }
 
-    @discardableResult
-    private func emitGatedTranscriptionFeedback(for gate: TranscriptionInsertGate) -> GatedTranscriptionFeedback? {
-        guard gate == .empty || gate == .tooShort else {
-            return nil
+    private func makeSkippedTranscriptionResult(
+        handoff: AudioProcessingHandoff,
+        skipReason: TranscriptionSkipReason
+    ) -> TranscriptionResult {
+        let timestamp = isoTimestamp()
+        return TranscriptionResult(
+            id: handoff.id,
+            recordingID: handoff.recordingArtifact.id,
+            recordingFilePath: handoff.recordingArtifact.filePath,
+            recordingUsability: handoff.usability,
+            transcriptionAttempted: false,
+            succeeded: false,
+            status: .skipped,
+            text: nil,
+            textLength: 0,
+            skipReason: skipReason,
+            error: nil,
+            startedAt: timestamp,
+            completedAt: timestamp,
+            durationMs: 0
+        )
+    }
+
+    private func completeTranscriptionInsertFlow(
+        session: ActiveRecordingSession,
+        recordingStoppedAt: String,
+        focusAtStop: FocusSnapshot?,
+        productFrontmostAtReceipt: Bool,
+        recordingArtifact: RecordingArtifact,
+        transcriptionResult: TranscriptionResult,
+        transcriptionArtifact: TranscriptionArtifact?
+    ) -> ProductResponse {
+        let evaluationStartedAt = Date()
+        let evaluationStartedAtTimestamp = isoTimestamp()
+        let gateEvaluation = evaluateTranscriptionInsertGate(for: transcriptionResult)
+        let gate: TranscriptionInsertGate
+
+        switch gateEvaluation {
+        case .passed:
+            gate = .passed
+        case let .gated(reason):
+            gate = reason
         }
 
-        let emitFeedback = {
-            NSSound.beep()
-        }
+        logHotKeyRecordingEvent(
+            flowID: session.flowID,
+            event: "insert-gate-evaluated",
+            detail: "gate=\(gate.rawValue),transcriptionStatus=\(transcriptionResult.status.rawValue),transcriptionAttempted=\(transcriptionResult.transcriptionAttempted),textLength=\(transcriptionResult.textLength)"
+        )
 
-        if Thread.isMainThread {
-            emitFeedback()
-        } else {
-            DispatchQueue.main.async(execute: emitFeedback)
-        }
+        switch gateEvaluation {
+        case let .gated(reason):
+            logHotKeyRecordingEvent(
+                flowID: session.flowID,
+                event: "insert-gated",
+                detail: "gate=\(reason.rawValue)"
+            )
+            let response = makeGatedHotKeyTranscriptionResponse(
+                session: session,
+                recordingStoppedAt: recordingStoppedAt,
+                productFrontmostAtReceipt: productFrontmostAtReceipt,
+                focusAtStop: focusAtStop,
+                recordingArtifact: recordingArtifact,
+                transcriptionArtifact: transcriptionArtifact,
+                transcriptionResult: transcriptionResult,
+                transcriptionInsertGate: reason,
+                gatedTranscriptionFeedback: nil
+            )
+            let insertResult = InsertResult(
+                id: session.flowID,
+                flowID: session.flowID,
+                transcriptionResultID: transcriptionResult.id,
+                transcriptionResultStatus: transcriptionResult.status,
+                transcriptionAttempted: transcriptionResult.transcriptionAttempted,
+                transcriptionTextLength: transcriptionResult.textLength,
+                insertAttempted: false,
+                status: .gated,
+                gate: reason,
+                gateReason: reason.rawValue,
+                error: response.error,
+                insertedTextLength: 0,
+                insertRoute: nil,
+                insertSource: .transcription,
+                startedAt: evaluationStartedAtTimestamp,
+                completedAt: isoTimestamp(),
+                durationMs: max(Int(Date().timeIntervalSince(evaluationStartedAt) * 1_000.0), 0)
+            )
+            try? persistInsertResult(insertResult)
+            return response
+        case let .passed(text):
+            logHotKeyRecordingEvent(
+                flowID: session.flowID,
+                event: "insert-started",
+                detail: "textLength=\(text.count)"
+            )
 
-        return .systemBeep
+            let receiptObservation = ReceiptObservation(
+                accessibilityTrusted: true,
+                focusSnapshot: session.focusAtStart
+            )
+            let insertResponse: ProductResponse
+            do {
+                insertResponse = try insertTranscription(
+                    text: text,
+                    requestID: session.flowID,
+                    presentsBlockedUI: false,
+                    receiptObservation: receiptObservation
+                )
+            } catch {
+                insertResponse = makeHotKeyInsertAttemptFailedResponse(
+                    flowID: session.flowID,
+                    error: "\(error)",
+                    receiptObservation: receiptObservation
+                )
+            }
+
+            let insertFailed = insertResponse.status != .succeeded
+            if insertFailed {
+                logHotKeyRecordingEvent(
+                    flowID: session.flowID,
+                    event: "insert-failed",
+                    detail: insertResponse.error ?? insertResponse.blockedReason ?? "status=\(insertResponse.status.rawValue)"
+                )
+            } else {
+                logHotKeyRecordingEvent(
+                    flowID: session.flowID,
+                    event: "insert-succeeded",
+                    detail: "insertRoute=\(insertResponse.insertRoute?.rawValue ?? "none"),textLength=\(text.count)"
+                )
+            }
+
+            let insertResult = InsertResult(
+                id: session.flowID,
+                flowID: session.flowID,
+                transcriptionResultID: transcriptionResult.id,
+                transcriptionResultStatus: transcriptionResult.status,
+                transcriptionAttempted: transcriptionResult.transcriptionAttempted,
+                transcriptionTextLength: transcriptionResult.textLength,
+                insertAttempted: true,
+                status: insertFailed ? .failed : .succeeded,
+                gate: .passed,
+                gateReason: nil,
+                error: insertResponse.error ?? insertResponse.blockedReason,
+                insertedTextLength: insertFailed ? 0 : text.count,
+                insertRoute: insertResponse.insertRoute,
+                insertSource: .transcription,
+                startedAt: evaluationStartedAtTimestamp,
+                completedAt: isoTimestamp(),
+                durationMs: max(Int(Date().timeIntervalSince(evaluationStartedAt) * 1_000.0), 0)
+            )
+            try? persistInsertResult(insertResult)
+
+            return makeCompletedHotKeyInsertResponse(
+                insertResponse: insertResponse,
+                session: session,
+                recordingStoppedAt: recordingStoppedAt,
+                focusAtStop: focusAtStop,
+                recordingArtifact: recordingArtifact,
+                transcriptionArtifact: transcriptionArtifact,
+                transcriptionInsertGate: .passed
+            )
+        }
+    }
+
+    private func makeHotKeyInsertAttemptFailedResponse(
+        flowID: String,
+        error: String,
+        receiptObservation: ReceiptObservation
+    ) -> ProductResponse {
+        ProductResponse(
+            id: flowID,
+            kind: .insertTranscription,
+            timestamp: isoTimestamp(),
+            productBundleID: Bundle.main.bundleIdentifier,
+            productPID: ProcessInfo.processInfo.processIdentifier,
+            status: .failed,
+            accessibilityTrusted: receiptObservation.accessibilityTrusted,
+            microphonePermissionStatus: .granted,
+            requestedMicrophonePermission: false,
+            promptAccessibility: false,
+            blockedReason: nil,
+            settleDelayMs: defaults.settle,
+            pasteDelayMs: defaults.paste,
+            restoreClipboard: false,
+            restoreDelayMs: defaults.restore,
+            textLength: 0,
+            transcriptionInsertGate: nil,
+            gatedTranscriptionFeedback: nil,
+            hotKeyInteractionModel: .pressAndHold,
+            insertRoute: nil,
+            insertSource: .transcription,
+            focusAtReceipt: receiptObservation.focusSnapshot,
+            focusBeforePaste: nil,
+            focusAfterPaste: nil,
+            focusAtStop: nil,
+            productFrontmostAtReceipt: isProductFrontmost(receiptObservation.focusSnapshot),
+            productFrontmostBeforePaste: false,
+            productFrontmostAfterPaste: false,
+            originalPasteboard: nil,
+            syntheticPastePosted: false,
+            clipboardRestored: false,
+            recordingStartedAt: nil,
+            recordingStoppedAt: nil,
+            recordingArtifact: nil,
+            transcriptionArtifact: nil,
+            transcribingPlaceholder: false,
+            localUserFeedback: nil,
+            error: error
+        )
     }
 
     private func makeCompletedHotKeyInsertResponse(
@@ -1811,7 +2155,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         recordingStoppedAt: String,
         focusAtStop: FocusSnapshot?,
         recordingArtifact: RecordingArtifact,
-        transcriptionArtifact: TranscriptionArtifact,
+        transcriptionArtifact: TranscriptionArtifact?,
         transcriptionInsertGate: TranscriptionInsertGate
     ) -> ProductResponse {
         ProductResponse(
@@ -1830,7 +2174,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             pasteDelayMs: insertResponse.pasteDelayMs,
             restoreClipboard: insertResponse.restoreClipboard,
             restoreDelayMs: insertResponse.restoreDelayMs,
-            textLength: transcriptionArtifact.textLength,
+            textLength: transcriptionArtifact?.textLength ?? insertResponse.textLength,
             transcriptionInsertGate: transcriptionInsertGate,
             gatedTranscriptionFeedback: nil,
             hotKeyInteractionModel: .pressAndHold,
@@ -1862,17 +2206,20 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         productFrontmostAtReceipt: Bool,
         focusAtStop: FocusSnapshot?,
         recordingArtifact: RecordingArtifact,
-        transcriptionArtifact: TranscriptionArtifact,
+        transcriptionArtifact: TranscriptionArtifact?,
+        transcriptionResult: TranscriptionResult,
         transcriptionInsertGate: TranscriptionInsertGate,
         gatedTranscriptionFeedback: GatedTranscriptionFeedback?
     ) -> ProductResponse {
-        ProductResponse(
+        let status: ProductResponseStatus = transcriptionResult.status == .failed ? .failed : .succeeded
+        let error = transcriptionResult.status == .failed ? transcriptionResult.error : nil
+        return ProductResponse(
             id: session.flowID,
             kind: .insertTranscription,
             timestamp: isoTimestamp(),
             productBundleID: Bundle.main.bundleIdentifier,
             productPID: ProcessInfo.processInfo.processIdentifier,
-            status: .succeeded,
+            status: status,
             accessibilityTrusted: isAccessibilityTrusted(prompt: false),
             microphonePermissionStatus: .granted,
             requestedMicrophonePermission: session.requestedMicrophonePermission,
@@ -1882,7 +2229,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             pasteDelayMs: defaults.paste,
             restoreClipboard: false,
             restoreDelayMs: defaults.restore,
-            textLength: transcriptionArtifact.textLength,
+            textLength: transcriptionResult.textLength,
             transcriptionInsertGate: transcriptionInsertGate,
             gatedTranscriptionFeedback: gatedTranscriptionFeedback,
             hotKeyInteractionModel: .pressAndHold,
@@ -1904,7 +2251,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             transcriptionArtifact: transcriptionArtifact,
             transcribingPlaceholder: false,
             localUserFeedback: gatedTranscriptionFeedback == nil ? nil : .systemBeep,
-            error: nil
+            error: error
         )
     }
 
@@ -2064,8 +2411,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             throw ProductRuntimeError.missingTranscriptionOutput(rawJSONOutputPath)
         }
 
-        return try String(contentsOf: URL(fileURLWithPath: textOutputPath), encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmingTrailingLineBreaks(
+            try String(contentsOf: URL(fileURLWithPath: textOutputPath), encoding: .utf8)
+        )
     }
 
     private func resolveTranscriptionLanguage(rawOutputJSONPath: String, fallbackLanguage: String) -> String {
@@ -2089,6 +2437,16 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             fputs("Could not persist transcription artifact for \(artifact.id): \(error)\n", stderr)
         }
+    }
+
+    private func persistTranscriptionResult(_ result: TranscriptionResult) throws {
+        try writeJSON(result, to: paths.lastTranscriptionResultFile)
+        try appendJSONLine(result, to: paths.transcriptionResultsLogFile)
+    }
+
+    private func persistInsertResult(_ result: InsertResult) throws {
+        try writeJSON(result, to: paths.lastInsertResultFile)
+        try appendJSONLine(result, to: paths.insertResultsLogFile)
     }
 
     private func makeRecordingArtifact(session: ActiveRecordingSession, measuredDurationMs: Int) throws -> RecordingArtifact {
@@ -2931,6 +3289,7 @@ runtimeAccessibilityTrustedOverride = launchOptions.forceAccessibilityTrusted
 runtimeMicrophoneDeniedOverride = launchOptions.forceMicrophoneDenied
 runtimeNoMicrophoneDeviceOverride = launchOptions.forceNoMicrophoneDevice
 runtimeMicrophoneRecorderStartFailureOverride = launchOptions.forceMicrophoneRecorderStartFailure
+runtimeSyntheticPasteFailureOverride = launchOptions.forceSyntheticPasteFailure
 runtimeForcedMicrophonePermissionStatus = launchOptions.forcedMicrophonePermissionStatus
 runtimeForcedMicrophonePermissionRequestResult = launchOptions.forcedMicrophonePermissionRequestResult
 runtimeCurrentMicrophonePermissionStatusOverride = launchOptions.forcedMicrophonePermissionStatus

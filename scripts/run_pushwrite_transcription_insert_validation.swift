@@ -36,6 +36,10 @@ enum TranscriptionStatus: String, Codable {
 
 enum TranscriptionInsertGate: String, Codable {
     case passed
+    case transcriptionSkipped
+    case transcriptionFailed
+    case emptyTranscriptionText
+    case whitespaceOnlyTranscriptionText
     case empty
     case tooShort
 }

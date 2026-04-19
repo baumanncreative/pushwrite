@@ -47,6 +47,7 @@ struct Options {
     let forceMicrophoneDenied: Bool
     let forceNoMicrophoneDevice: Bool
     let forceMicrophoneRecorderStartFailure: Bool
+    let forceSyntheticPasteFailure: Bool
     let forcedMicrophonePermissionStatus: MicrophonePermissionStatus?
     let forcedMicrophonePermissionRequestResult: MicrophonePermissionStatus?
     let settleDelayMs: UInt32?
@@ -126,6 +127,10 @@ enum TranscriptionStatus: String, Codable {
 
 enum TranscriptionInsertGate: String, Codable {
     case passed
+    case transcriptionSkipped
+    case transcriptionFailed
+    case emptyTranscriptionText
+    case whitespaceOnlyTranscriptionText
     case empty
     case tooShort
 }
@@ -336,6 +341,8 @@ func parseOptions(arguments: [String]) throws -> Options {
     var forceNoMicrophoneDevice = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_NO_MICROPHONE_DEVICE"] == "1"
     var forceMicrophoneRecorderStartFailure =
         ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_RECORDER_START_FAILURE"] == "1"
+    var forceSyntheticPasteFailure =
+        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_SYNTHETIC_PASTE_FAILURE"] == "1"
     var forcedMicrophonePermissionStatus = parseMicrophonePermissionStatus(
         ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_PERMISSION_STATUS"]
     )
@@ -406,6 +413,8 @@ func parseOptions(arguments: [String]) throws -> Options {
             forceNoMicrophoneDevice = true
         case "--force-microphone-recorder-start-failure":
             forceMicrophoneRecorderStartFailure = true
+        case "--force-synthetic-paste-failure":
+            forceSyntheticPasteFailure = true
         case "--force-microphone-permission-status":
             forcedMicrophonePermissionStatus = try requireMicrophonePermissionStatus(
                 try requireValue(for: argument),
@@ -458,6 +467,7 @@ func parseOptions(arguments: [String]) throws -> Options {
         forceMicrophoneDenied: forceMicrophoneDenied,
         forceNoMicrophoneDevice: forceNoMicrophoneDevice,
         forceMicrophoneRecorderStartFailure: forceMicrophoneRecorderStartFailure,
+        forceSyntheticPasteFailure: forceSyntheticPasteFailure,
         forcedMicrophonePermissionStatus: forcedMicrophonePermissionStatus,
         forcedMicrophonePermissionRequestResult: forcedMicrophonePermissionRequestResult,
         settleDelayMs: settleDelayMs,
@@ -610,6 +620,9 @@ func launchProduct(options: Options) throws -> ProductState {
     }
     if options.forceMicrophoneRecorderStartFailure {
         arguments.append("--force-microphone-recorder-start-failure")
+    }
+    if options.forceSyntheticPasteFailure {
+        arguments.append("--force-synthetic-paste-failure")
     }
     if let forcedMicrophonePermissionStatus = options.forcedMicrophonePermissionStatus {
         arguments.append(contentsOf: ["--force-microphone-permission-status", forcedMicrophonePermissionStatus.rawValue])
