@@ -1,0 +1,153 @@
+{
+  "task": "003B",
+  "title": "revalidate real macOS TCC microphone flow after 003A",
+  "timestamp": "2026-04-18T17:03:47Z",
+  "productAppPath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+  "bundleID": "ch.baumanncreative.pushwrite",
+  "summary": {
+    "overallVerdict": "003A partially real verified, not fully verified",
+    "realMicPromptAtLaunchObserved": false,
+    "realNotDeterminedStateObserved": true,
+    "realFirstPromptAtRecordingIntentObserved": false,
+    "reason": "The current real app-bundle launch reached notDetermined without prompting at launch, but the first real hotkey attempt blocked on missing Accessibility permission before the microphone request path."
+  },
+  "realSetup": {
+    "date": "2026-04-18",
+    "timezone": "Europe/Zurich",
+    "microphoneResetCommand": "tccutil reset Microphone ch.baumanncreative.pushwrite",
+    "microphoneResetSucceeded": true,
+    "launchMethodUsedForRealBundleCheck": "open /Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app --args --runtime-dir /tmp/pushwrite-003b-open2",
+    "launchServicesRuntimeDir": "/tmp/pushwrite-003b-open2",
+    "microphoneTCCRowsForBundleAfterReset": [],
+    "accessibilityTCCRowsForBundle": [],
+    "launchState": {
+      "running": true,
+      "accessibilityTrusted": false,
+      "microphonePermissionStatus": "notDetermined",
+      "blockedReason": "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V.",
+      "hotKeyRegistered": true,
+      "evidenceFile": "/tmp/pushwrite-003b-open2/product-state.json"
+    },
+    "hotkeyAttempt": {
+      "kind": "recordAudio",
+      "status": "blocked",
+      "flowStates": [
+        "triggered",
+        "blocked"
+      ],
+      "requestedMicrophonePermission": false,
+      "microphonePermissionStatus": "notDetermined",
+      "blockedReason": "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V.",
+      "recordingStarted": false,
+      "transcriptionStarted": false,
+      "insertStarted": false,
+      "responseEvidenceFile": "/tmp/pushwrite-003b-open2/logs/last-hotkey-response.json",
+      "flowEvidenceFile": "/tmp/pushwrite-003b-open2/logs/flow-events.jsonl"
+    },
+    "harnessFindings": [
+      "Direct executable launch and existing control-script launch are not reliable for real microphone-TCC attribution on this workstation.",
+      "The script-driven direct launch reported microphonePermissionStatus=granted even when no microphone TCC row existed for ch.baumanncreative.pushwrite.",
+      "The LaunchServices app-bundle launch was the only path that reproduced a plausible bundle-specific notDetermined state."
+    ]
+  },
+  "cases": {
+    "mic_not_determined_allow_real": {
+      "category": "E",
+      "categoryLabel": "TCC-/QA-Setup-Problem",
+      "attempted": true,
+      "realBundleNotDeterminedConfirmed": true,
+      "promptObservedAtLaunch": false,
+      "promptObservedAtRecordingIntent": false,
+      "recordingStarted": false,
+      "inferenceStarted": false,
+      "insertStarted": false,
+      "localFeedbackChannel": "blockedReason in response/state",
+      "observations": [
+        "The real app-bundle launch remained notDetermined after microphone reset.",
+        "The first real hotkey attempt blocked on Accessibility before microphone permission was requested.",
+        "requestedMicrophonePermission remained false."
+      ],
+      "conclusion": "The allow path could not be reached because the current app bundle lacks real Accessibility permission on this workstation."
+    },
+    "mic_not_determined_deny_real": {
+      "category": "E",
+      "categoryLabel": "TCC-/QA-Setup-Problem",
+      "attempted": true,
+      "realBundleNotDeterminedConfirmed": true,
+      "promptObservedAtRecordingIntent": false,
+      "recordingStarted": false,
+      "inferenceStarted": false,
+      "insertStarted": false,
+      "observations": [
+        "The real deny path was blocked by the same prior Accessibility failure.",
+        "No real microphone system prompt was reached."
+      ],
+      "conclusion": "The deny path is not assessable until the current app bundle can pass the real Accessibility gate."
+    },
+    "mic_previously_denied_real": {
+      "category": "E",
+      "categoryLabel": "TCC-/QA-Setup-Problem",
+      "attempted": false,
+      "observations": [
+        "A real bundle-specific denied state could not be established because the true first-prompt path was not reachable."
+      ],
+      "conclusion": "Only validator-side evidence exists; no real bundle-specific denied state was confirmed in 003B."
+    },
+    "mic_allowed_real": {
+      "category": "B",
+      "categoryLabel": "Produktpfad plausibel, aber real nicht voll bestaetigt",
+      "attempted": false,
+      "observations": [
+        "The current real app-bundle path was reset to notDetermined and blocked on Accessibility before microphone request.",
+        "A direct executable launch can show granted but is not reliable for product-specific microphone TCC attribution."
+      ],
+      "conclusion": "The authorized real-bundle path remains open."
+    },
+    "mic_allowed_but_no_device_or_recorder_failed_real": {
+      "category": "B",
+      "categoryLabel": "Produktpfad plausibel, aber real nicht voll bestaetigt",
+      "attempted": false,
+      "observations": [
+        "The real allowed prerequisite was not reached for the current app bundle."
+      ],
+      "conclusion": "Real recorder/device-failure separation remains unconfirmed in 003B."
+    },
+    "no_regression_accessibility_insert_path_real": {
+      "category": "A",
+      "categoryLabel": "Produktpfad real bestaetigt",
+      "attempted": true,
+      "observations": [
+        "The real bundle launch showed microphonePermissionStatus=notDetermined with no launch prompt.",
+        "The first real hotkey attempt produced triggered -> blocked.",
+        "The blocked reason stayed Accessibility-specific.",
+        "requestedMicrophonePermission stayed false.",
+        "No recording, transcription, or insert artifacts were created."
+      ],
+      "conclusion": "Accessibility blocking remained separate from microphone TCC in the real app-bundle run."
+    }
+  },
+  "supportingEvidence": {
+    "prior003AResults": [
+      "/Users/michel/Code/pushwrite/docs/execution/003A-results-implement-minimal-microphone-permission-and-blocked-flow-at-real-recording-intent.md",
+      "/Users/michel/Code/pushwrite/docs/execution/003A-results-implement-minimal-microphone-permission-and-blocked-flow-at-real-recording-intent.json"
+    ],
+    "notes": [
+      "A fresh 003B attempt to rerun the old recording validator was not used as pass/fail evidence because its direct-launch baseline no longer matched the real app-bundle TCC conditions.",
+      "A fresh insert-validator rerun showed harness drift and was likewise not used to overturn the real 003B classification."
+    ]
+  },
+  "recommendation": {
+    "nextStep": "Grant Accessibility to the exact current PushWrite.app bundle or use a stable signed bundle path, then rerun the real LaunchServices-based microphone prompt tests.",
+    "requiredForFullVerification": [
+      "real mic_not_determined_allow prompt observed at recording intent",
+      "real mic_not_determined_deny prompt observed at recording intent",
+      "real previously denied follow-up check",
+      "real allowed plus no-device/recorder-failed separation"
+    ]
+  },
+  "changedArtifacts": [
+    "/Users/michel/Code/pushwrite/docs/execution/003B-results-revalidate-real-macos-tcc-microphone-flow-after-003A.md",
+    "/Users/michel/Code/pushwrite/docs/execution/003B-results-revalidate-real-macos-tcc-microphone-flow-after-003A.json"
+  ],
+  "productCodeChanged": false
+}
