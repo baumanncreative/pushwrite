@@ -1,238 +1,381 @@
-# Auftrag 004: Hotkey- und Aufnahmefluss für PushWrite v0.1.0 auf macOS strukturieren
+# 004 Entscheidung: Hotkey- und Aufnahmefluss fuer PushWrite v0.1.0 auf macOS
+
+## Status
+
+Entschieden fuer MVP 0.1.0.
+
+Diese Datei haelt die Produktentscheidung fuer den Hotkey- und Aufnahmefluss fest.
+Sie ist keine Implementierungsvorgabe im engeren Sinn, sondern die verbindliche Entscheidungsbasis fuer nachfolgende kleine Umsetzungsauftraege.
+
+Der erste direkt anschlussfaehige Folgeauftrag ist:
+`004A-minimal-hotkey-recording-prototype.md`
+
+---
 
 ## Ziel
 
-Erstelle eine präzise Strukturierungs- und Entscheidungsgrundlage für den Hotkey- und Aufnahmefluss von PushWrite auf macOS.
+PushWrite soll im MVP auf macOS einen engen, robusten und gut beobachtbaren Kernablauf bieten:
 
-Der Auftrag dient nicht dazu, den vollständigen Aufnahme-Stack oder die gesamte App bereits umzusetzen.  
-Er dient dazu, den Kernablauf von globalem Hotkey, Aufnahmezustand und Übergabe an die nachgelagerte Verarbeitung so zu schneiden, dass daraus ein kleiner, kontrollierbarer Implementierungsauftrag abgeleitet werden kann.
-
-Das Ergebnis soll so konkret sein, dass die erste technische Validierung oder erste enge Umsetzung des Aufnahmeflusses direkt daraus entstehen kann.
-
----
-
-## Projektkontext
-
-PushWrite ist ein lokal laufendes Open-Source-Werkzeug für macOS.
-
-Der Kernworkflow des MVP ist:
-
-1. Nutzer drückt einen globalen Hotkey
+1. Nutzer drueckt einen globalen Hotkey
 2. PushWrite startet eine Mikrofonaufnahme
 3. Nutzer spricht
 4. PushWrite beendet die Aufnahme
-5. Die Sprache wird lokal transkribiert
-6. Der erkannte Text wird direkt an der aktuellen Cursor-Position eingefügt
+5. das Audio wird an die lokale Weiterverarbeitung uebergeben
+6. der weitere Produktfluss kann darauf aufbauen
 
-Für v0.1.0 ist dieser Ablauf bewusst eng und produktzentriert.
+Diese Entscheidung betrifft nur den Abschnitt von Hotkey bis zur sauberen Audio-Uebergabe.
 
-### Verbindliche Rahmenbedingungen
+---
 
-- Zielplattform ist ausschliesslich macOS
-- Fokus ist ausschliesslich Version 0.1.0
-- betrachtet wird nur der MVP-Scope
+## Gesichert
+
+- Fokus ist ausschliesslich macOS
+- Fokus ist ausschliesslich MVP 0.1.0
 - globaler Hotkey ist Teil des Produktkerns
 - Mikrofonaufnahme ist Teil des Produktkerns
-- Standardpfad ist lokaler, offline-fähiger Betrieb
-- `whisper.cpp` bleibt gesetzte Inferenz-Richtung
-- Inferenz-Layer und macOS-App-Layer sind getrennt zu betrachten
-- keine Datei-Transkription
-- keine Multiplattform-Betrachtung
-- keine vorzeitige Zukunftsabstraktion
-- der erste Ablauf soll robust sein, nicht maximal flexibel
+- der Ablauf soll lokal und offlinefaehig sein
+- `whisper.cpp` bleibt die gesetzte Inferenz-Richtung
+- Inferenz-Layer und macOS-App-Layer werden getrennt betrachtet
+- Robustheit ist wichtiger als Flexibilitaet
+- der erste Aufnahmefluss soll klein und kontrollierbar sein
 
 ---
 
-## Zweck dieses Auftrags
+## Problemkern
 
-Dieser Auftrag soll klären:
+Der Hotkey und der Aufnahmefluss koennen fuer den MVP nicht getrennt betrachtet werden.
 
-- wie der globale Hotkey produktseitig in einen sauberen Aufnahmefluss übersetzt werden soll
-- welche Zustände und Zustandswechsel dafür minimal nötig sind
-- wie Start, Stop, Abbruch und Übergabe an die Transkription logisch geschnitten werden sollten
-- welche Fehler- und Randfälle früh berücksichtigt werden müssen
-- welche Form des Hotkey-Verhaltens für den MVP am tragfähigsten ist
+Der Grund ist produktseitig einfach:
 
----
+- der Hotkey definiert, wann Aufnahme beginnt
+- der Hotkey definiert, wann Aufnahme endet
+- daraus ergibt sich direkt die Begrenzung des Audiosegments
+- genau diese Begrenzung bestimmt, was spaeter an die Transkription uebergeben wird
+- wenn dieser Ablauf unscharf ist, wird der Produktkern instabil
 
-## Konkreter Auftrag
-
-Analysiere den Hotkey- und Aufnahmefluss von PushWrite auf macOS und liefere eine strukturierte Entscheidungsgrundlage für den MVP.
-
-Die Analyse soll sich explizit auf diesen Produktfall beziehen:
-
-**globalen Hotkey auslösen, Aufnahme zuverlässig steuern, Audio klar begrenzen und sauber an die lokale Transkription übergeben**
-
-Nicht gesucht ist eine allgemeine Diskussion über Desktop-Input-Patterns, sondern eine enge Strukturierung des produktkritischen Kernablaufs.
+Es geht hier nicht primaer um eine allgemeine UI-Frage, sondern um den zentralen Nutzungsmechanismus des Produkts.
 
 ---
 
-## Erwartetes Ergebnis
+## Gepruefte Interaktionsmodelle
 
-Liefere ein strukturiertes Dokument mit den folgenden Abschnitten:
+### Option A: press-and-hold
 
-### 1. Problemdefinition
-Beschreibe den technischen und produktbezogenen Kern des Problems.
+Grundidee:
+- Aufnahme startet beim Druecken des Hotkeys
+- Aufnahme laeuft nur waehrend der Hotkey gehalten wird
+- Aufnahme endet beim Loslassen
 
-Zu klären ist insbesondere:
+Vorteile:
+- klare Start- und Stop-Grenze
+- enger Zustandsraum
+- weniger Fehlinterpretation im MVP
+- geringere Gefahr fuer doppelte oder haengende Start-/Stop-Zyklen
+- produktseitig leicht erklaerbar
 
-- was der Hotkey im System konkret auslösen soll
-- warum Hotkey und Aufnahmefluss zusammen betrachtet werden müssen
-- warum dieser Ablauf für den MVP nicht nur technisch, sondern produktseitig kritisch ist
+Schwaechen:
+- setzt aktives Halten voraus
+- kann fuer laengere Diktate unbequemer sein
+- spaetere Komfortwuensche werden nicht abgedeckt
 
-### 2. Mögliche Interaktionsmodelle
-Benenne die realistisch relevanten Bedienmodelle für den MVP.
+MVP-Risiko:
+- gering
+- technisch und produktseitig der engere Pfad
 
-Zum Beispiel auf hoher Ebene:
+### Option B: toggle start/stop
 
-- press-and-hold
+Grundidee:
+- erster Hotkey startet Aufnahme
+- zweiter Hotkey beendet Aufnahme
+
+Vorteile:
+- bequemer fuer laengeres Sprechen
+- kein permanentes Halten noetig
+
+Schwaechen:
+- groesserer Zustandsraum
+- hoehere Gefahr fuer Fehlbedienung
+- schwierigeres Recovery bei verpasstem Stop
+- mehr Randfaelle im MVP
+
+MVP-Risiko:
+- erhoeht
+- bringt frueh mehr Logik, als fuer den ersten Kernfluss sinnvoll ist
+
+### Option C: weitere Varianten
+
+Beispiele:
+- VAD-gestuetzte Automatik
+- Hybridmodelle
+- kontinuierlicher Diktiermodus
+
+Einordnung:
+- fuer spaetere Produktstufen denkbar
+- fuer MVP 0.1.0 bewusst ausgeschlossen
+
+---
+
+## Entscheidung
+
+Fuer PushWrite v0.1.0 wird als erstes Interaktionsmodell **press-and-hold** festgelegt.
+
+### Begruendung
+
+Diese Entscheidung wird getroffen, weil press-and-hold fuer den ersten Produktkern die beste Kombination aus:
+
+- Einfachheit
+- Beobachtbarkeit
+- kontrollierbarer Audio-Begrenzung
+- kleinem Zustandsraum
+- klarer Nutzerlogik
+
+bietet.
+
+Das Ziel des MVP ist nicht maximaler Komfort, sondern ein stabiler, enger, nachvollziehbarer Grundfluss.
+
+---
+
+## Minimales Zustandsmodell
+
+Fuer den MVP wird folgendes minimales Hauptmodell festgelegt:
+
+- `idle`
+- `recording`
+- `processing`
+
+Weitere Fehlerdetails oder Hilfsflags sind erlaubt, aber kein grosses allgemeines Zustandsframework.
+
+### `idle`
+
+Bedeutung:
+- nichts laeuft
+- System ist bereit fuer einen neuen Start
+
+Erlaubt:
+- Hotkey down kann Aufnahme starten
+
+Nicht erlaubt:
+- direkte Verarbeitung ohne abgeschlossene Aufnahme
+
+### `recording`
+
+Bedeutung:
+- Mikrofonaufnahme laeuft aktiv
+
+Erlaubt:
+- Stop ueber Hotkey up
+- kontrollierter Abbruch bei technischem Fehler
+
+Nicht erlaubt:
+- zweite parallele Aufnahme
+- wiederholtes Starten aus laufender Aufnahme heraus
+
+### `processing`
+
+Bedeutung:
+- Aufnahme ist beendet
+- Audio wird intern uebergeben oder vorbereitet
+- der Ablauf wird sauber abgeschlossen
+
+Erlaubt:
+- Rueckkehr nach `idle`
+
+Nicht erlaubt:
+- neuer Start vor sauberem Abschluss
+
+---
+
+## Verbindliche Uebergaenge
+
+Der verbindliche Standardfluss fuer den MVP lautet:
+
+`idle -> recording -> processing -> idle`
+
+Zusaetzlich ist als kontrollierter Fehler- oder Abbruchpfad erlaubt:
+
+- `recording -> idle`
+- `processing -> idle`
+
+Nicht gewuenscht sind breite Seitenaeste oder mehrere konkurrierende Parallelpfade.
+
+---
+
+## Start-, Stop- und Abbruchlogik
+
+### Start
+
+Eine Aufnahme beginnt genau dann, wenn:
+
+- der globale Hotkey gedrueckt wird
+- der Zustand `idle` ist
+- Aufnahme technisch gestartet werden kann
+
+Wenn Start scheitert:
+- kein haengender Zwischenzustand
+- Rueckkehr nach `idle`
+- Fehler muss beobachtbar sein
+
+### Stop
+
+Eine Aufnahme endet genau dann, wenn:
+
+- der Hotkey losgelassen wird
+- der Zustand `recording` ist
+
+Dann gilt:
+- Aufnahme sauber beenden
+- Audio abschliessen
+- auf `processing` wechseln
+- Audio an einen klaren Weiterverarbeitungspunkt uebergeben
+- danach nach `idle` zurueckkehren
+
+### Abbruch
+
+Ein Abbruch ist zulaessig, wenn z. B.:
+
+- Aufnahme nicht gestartet werden kann
+- Aufnahme technisch fehlschlaegt
+- Audio leer oder unbrauchbar ist
+- Uebergabe an die Weiterverarbeitung fehlschlaegt
+
+Dann gilt:
+- kein Hängenbleiben in `recording`
+- kein Hängenbleiben in `processing`
+- Rueckkehr in einen definierten Zustand
+- Befund muss beobachtbar sein
+
+---
+
+## Fehler- und Randfaelle auf MVP-Niveau
+
+### 1. Hotkey wird erkannt, aber Aufnahme startet nicht
+Minimale Reaktion:
+- Start abbrechen
+- Fehler sichtbar machen
+- nach `idle` zurueck
+
+### 2. Hotkey up kommt ohne laufende Aufnahme
+Minimale Reaktion:
+- ignorieren
+- keinen Zusatzfluss oeffnen
+
+### 3. Während `recording` kommt ein weiterer Trigger
+Minimale Reaktion:
+- ignorieren oder strikt blockieren
+- keine zweite Aufnahme starten
+
+### 4. Während `processing` kommt ein neuer Startversuch
+Minimale Reaktion:
+- blockieren
+- keine Parallelaufnahme
+
+### 5. Aufnahme ist leer oder offensichtlich zu kurz
+Minimale Reaktion:
+- technisch kontrolliert abschliessen
+- Befund festhalten
+- sauber nach `idle` zurueck
+
+### 6. Audio-Uebergabe scheitert
+Minimale Reaktion:
+- Fehler sichtbar machen
+- keine haengende Verarbeitung
+- Rueckkehr nach `idle`
+
+### 7. Zustand bleibt inkonsistent stehen
+Minimale Reaktion:
+- aktiv verhindern
+- lieber enger schneiden als flexible Sonderpfade bauen
+
+---
+
+## Was bewusst noch nicht gebaut wird
+
+Bewusst ausserhalb von v0.1.0 beziehungsweise ausserhalb dieses Entscheidungskerns bleiben:
+
 - toggle start/stop
-- andere minimal plausible Varianten, falls relevant
-
-Für jede Variante soll beschrieben werden:
-
-- Grundidee
-- erwartbare Vorteile
-- erwartbare Schwächen
-- Risiken für den MVP
-- Auswirkung auf Einfachheit, Robustheit und Nutzerverständnis
-
-### 3. Empfohlene Zustände und Zustandsübergänge
-Definiere das minimale Zustandsmodell für den Aufnahmefluss.
-
-Zum Beispiel auf hoher Ebene:
-
-- idle
-- recording
-- processing
-- error
-- optional blocked oder permission-missing, falls nötig
-
-Für jeden Zustand soll beschrieben werden:
-
-- was ihn auslöst
-- was in ihm erlaubt ist
-- wodurch er verlassen wird
-- welche unzulässigen Übergänge verhindert werden müssen
-
-### 4. Start-, Stop- und Abbruchlogik
-Beschreibe, wie der Ablauf logisch geschnitten werden sollte.
-
-Zu beantworten ist:
-
-- wann genau eine Aufnahme beginnt
-- wann genau sie endet
-- wie mit zu kurzen, leeren oder abgebrochenen Aufnahmen umzugehen ist
-- wie die Übergabe an die Transkription ausgelöst wird
-- welche Ereignisse den Ablauf blockieren oder zurücksetzen sollten
-
-### 5. Fehler- und Randfälle
-Benenne die wichtigsten problematischen Situationen auf MVP-Niveau.
-
-Zum Beispiel:
-
-- Hotkey wird ausgelöst, aber Aufnahme kann nicht starten
-- Aufnahme läuft bereits und ein weiterer Trigger kommt herein
-- Mikrofon ist nicht verfügbar
-- Aufnahme ist leer oder zu kurz
-- Aufnahme endet, aber Übergabe an die Transkription scheitert
-- Status bleibt in einem inkonsistenten Zustand hängen
-
-Für jeden Fall soll beschrieben werden:
-
-- woran der Zustand erkannt wird
-- welche Produktauswirkung er hat
-- welche minimale Reaktion oder Rückmeldung der MVP braucht
-
-### 6. MVP-Empfehlung
-Gib eine klare Empfehlung ab:
-
-- welches Hotkey-Modell für v0.1.0 zuerst verfolgt werden soll
-- welches minimale Zustandsmodell ausreicht
-- welche Komplexität bewusst noch nicht gebaut werden soll
-- welche Kompromisse im MVP vertretbar sind
-
-### 7. Frühe Validierung
-Definiere, was vor grösserer Implementierung minimal verifiziert werden sollte.
-
-Zum Beispiel:
-
-- ob der globale Hotkey unter den geplanten Bedingungen zuverlässig arbeitet
-- ob das gewählte Interaktionsmodell praktisch stabil genug ist
-- ob der Aufnahmefluss sauber zwischen idle, recording und processing wechselt
-- welche Beobachtungen ein Kill-Kriterium wären
-
-### 8. Vorschlag für Folgeauftrag
-Formuliere daraus einen kleinen, konkreten Folgeauftrag für Codex, der entweder:
-
-- einen minimalen Hotkey-/Aufnahme-Prototypen vorbereitet
-- oder den ersten engen Implementierungsschritt für den Ablauf beschreibt
+- VAD-gesteuerte Automatik
+- kontinuierlicher Diktiermodus
+- Datei-Transkription
+- breite UI-Ausgestaltung
+- finale Textinjektion am Cursor
+- grosse Recovery- oder Retry-Mechaniken
+- vorgezogene Zukunftsabstraktion fuer andere Plattformen
+- breite Konfigurierbarkeit des Hotkeys
+- komplexe Session-Modelle
 
 ---
 
-## Anforderungen
+## Fruehe Validierung
 
-Das Ergebnis muss:
+Vor groesserer Implementierung soll minimal verifiziert werden:
 
-- ausschliesslich den macOS-MVP betrachten
-- den engen Produktscope von PushWrite respektieren
-- Hotkey und Aufnahmefluss gemeinsam denken
-- zwischen gesichert, plausible Annahme und offene Frage sauber trennen
-- Robustheit höher gewichten als Flexibilität
-- ein kleines, kontrollierbares Zustandsmodell bevorzugen
-- klar benennen, welche Komplexität für den MVP bewusst vermieden werden soll
+1. globaler Hotkey ist im geplanten App-Kontext stabil erkennbar
+2. press-and-hold fuehlt sich im Nutzungspfad eindeutig an
+3. Aufnahme startet nur aus `idle`
+4. Aufnahme endet nur aus `recording`
+5. `processing` blockiert neue Aufnahmeversuche sauber
+6. der Ablauf kehrt nach Erfolg oder Fehler immer nach `idle` zurueck
+7. Audio wird als klar definierte Einheit an einen Verarbeitungspunkt uebergeben
 
-Wenn Aussagen unsicher sind, müssen sie als Annahme oder offene Frage markiert werden.
+### Kill-Kriterien
 
----
+Die gewaehlte Richtung waere frueh zu hinterfragen, wenn:
 
-## Nicht-Ziele
-
-Nicht Teil dieses Auftrags sind:
-
-- vollständige Implementierung des Aufnahme-Stacks
-- detaillierte Audio-Engine-Optimierung
-- UI-Design oder visuelle Ausarbeitung im Detail
-- Multiplattform-Betrachtung
-- Datei- oder Batch-Aufnahme
-- kontinuierliche Diktiermodi ausserhalb des MVP-Bedarfs
-- erweiterte Editier- oder Nachbearbeitungslogik
-- tiefe Architektur für spätere Zukunftsszenarien
+- Hotkey-Ereignisse nicht stabil genug beobachtbar sind
+- press-and-hold im realen Nutzungspfad unpraktisch oder technisch unzuverlaessig ist
+- der Ablauf regelmaessig in inkonsistenten Zwischenzustaenden landet
+- eine einfache Umsetzung bereits unverhaeltnismaessig viele Sonderfaelle erzwingt
 
 ---
 
-## Gewünschte Denklogik
+## Empfehlung
 
-Bitte arbeite nach dieser Priorität:
+Fuer PushWrite v0.1.0 gilt:
 
-1. Welches Hotkey-Modell ist für den MVP praktisch am tragfähigsten?
-2. Welche Zustände und Übergänge sind minimal nötig, damit der Ablauf stabil bleibt?
-3. Welche Fehler oder Randfälle können den Produktkern früh entwerten?
-4. Welche Teile müssen zuerst validiert werden, bevor breitere Implementierung sinnvoll ist?
-5. Welche Komplexität muss bewusst ausserhalb von v0.1.0 bleiben?
+- zuerst **press-and-hold**
+- zuerst nur **idle -> recording -> processing -> idle**
+- zuerst kleiner technischer Prototyp
+- erst danach Ausbau
 
----
+Der Produktkompromiss ist bewusst:
 
-## Form der Antwort
+- weniger Komfort im ersten Schritt
+- dafuer hoehere Klarheit und Stabilitaet
 
-Die Antwort soll:
-
-- klar gegliedert sein
-- konkrete Interaktions- und Ablaufoptionen benennen
-- keine unnötige Theorie enthalten
-- den Produktkontext ernst nehmen
-- am Ende eine klare MVP-Empfehlung geben
-- einen kleinen Folgeauftrag enthalten, der direkt weiterverwendet werden kann
+Das ist fuer den MVP vertretbar und erwuenscht.
 
 ---
 
-## Akzeptanzkriterien
+## Naechster Schritt
 
-Der Auftrag ist erfüllt, wenn:
+Der direkte Folgeauftrag ist:
 
-- die relevanten Hotkey- und Aufnahme-Modelle für den MVP identifiziert wurden
-- ein klares minimales Zustandsmodell vorgeschlagen wurde
-- Start-, Stop- und Abbruchlogik nachvollziehbar eingeordnet wurden
-- die wichtigsten Fehler- und Randfälle benannt wurden
-- eine klare MVP-Empfehlung ausgesprochen wurde
-- ein kleiner, direkt anschlussfähiger Folgeauftrag formuliert wurde
+`004A-minimal-hotkey-recording-prototype.md`
+
+Dieser Folgeauftrag soll:
+
+- den globalen press-and-hold Hotkey technisch validieren
+- den minimalen Aufnahmefluss umsetzen
+- einen klaren Audio-Uebergabepunkt schaffen
+- die Beobachtbarkeit der Zustaende sichern
+- bewusst noch nicht die finale Inferenz- und Insert-Logik ausbauen
+
+---
+
+## Kennzeichnung des Entscheidungsstatus
+
+### Gesichert
+- Hotkey und Aufnahmefluss muessen gemeinsam gedacht werden
+- press-and-hold ist fuer den ersten MVP-Schritt der engere Pfad
+- ein kleines Zustandsmodell ist fuer den MVP vorzuziehen
+- `whisper.cpp` bleibt gesetzte Inferenz-Richtung
+- der macOS-App-Layer bleibt separat zu schneiden
+
+### Plausible Annahme
+- press-and-hold wird im realen Nutzungspfad frueh stabiler sein als toggle
+- ein dreistufiges Zustandsmodell reicht fuer den ersten Prototyp aus
+
+### Offene Frage
+- welche konkrete technische Form der Audio-Uebergabe im aktuellen Code am saubersten ist
+- welche Heuristik fuer leer oder zu kurz im ersten Prototyp minimal sinnvoll ist
+- welche lokale Beobachtbarkeit im bestehenden Projekt am wenigsten Reibung erzeugt
