@@ -1,0 +1,418 @@
+{
+  "task": "003C",
+  "title": "review accessibility trust drift across rebuild, bundle, and launch paths on macOS",
+  "timestamp": "2026-04-19T06:20:00Z",
+  "productCodeChanged": false,
+  "evidenceRoot": "/tmp/pushwrite-003c/matrix-20260419T055834Z",
+  "bundleIdentity": {
+    "stableBefore": {
+      "path": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "cdHash": "f6d47345d23d4e0655ff673cad5c31eee9cd1ada",
+      "identityFile": "/tmp/pushwrite-003c/matrix-20260419T055834Z/identity/stable-before.txt"
+    },
+    "oldCandidate": {
+      "path": "/Users/michel/Code/pushwrite/build/pushwrite-product-candidate/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "cdHash": "461a4ebceba89aa627aa82430d24695cae4f0def",
+      "identityFile": "/tmp/pushwrite-003c/matrix-20260419T055834Z/identity/old-candidate-before.txt"
+    },
+    "stableAfterPromote": {
+      "path": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "cdHash": "461a4ebceba89aa627aa82430d24695cae4f0def",
+      "identityFile": "/tmp/pushwrite-003c/matrix-20260419T055834Z/identity/stable-after-promote.txt"
+    },
+    "stableAfterRollback": {
+      "path": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "cdHash": "f6d47345d23d4e0655ff673cad5c31eee9cd1ada",
+      "identityFile": "/tmp/pushwrite-003c/matrix-20260419T055834Z/identity/stable-after-reprobe-rollback.txt"
+    }
+  },
+  "systemTCC": {
+    "before": {
+      "file": "/tmp/pushwrite-003c/matrix-20260419T055834Z/tcc/tcc-reprobe-before.txt",
+      "systemAccessibilityRow": "kTCCServiceAccessibility|ch.baumanncreative.pushwrite|0|2|4|1776533278|40"
+    },
+    "afterPromote": {
+      "file": "/tmp/pushwrite-003c/matrix-20260419T055834Z/tcc/tcc-reprobe-after-promote.txt",
+      "systemAccessibilityRow": "kTCCServiceAccessibility|ch.baumanncreative.pushwrite|0|2|4|1776533278|40"
+    },
+    "afterRollback": {
+      "file": "/tmp/pushwrite-003c/matrix-20260419T055834Z/tcc/tcc-reprobe-after-rollback.txt",
+      "systemAccessibilityRow": "kTCCServiceAccessibility|ch.baumanncreative.pushwrite|0|2|4|1776533278|40"
+    }
+  },
+  "runs": [
+    {
+      "id": "phase1_stable_ls_run1",
+      "phase": "phase1-baseline",
+      "category": "A",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "bundleCDHash": "f6d47345d23d4e0655ff673cad5c31eee9cd1ada",
+      "startMethod": "launchservices_open",
+      "bundleRebuiltOrReplacedSinceGrant": false,
+      "runtimeDir": "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase1_stable_ls_run1/runtime",
+      "preflight": {
+        "status": "ready",
+        "accessibilityTrusted": true,
+        "blockedReason": null
+      },
+      "insert": {
+        "status": "succeeded",
+        "accessibilityTrusted": true,
+        "blockedReason": null,
+        "syntheticPastePosted": true,
+        "blockedByAccessibility": false
+      },
+      "hotkey": {
+        "executed": false,
+        "blockedByAccessibility": null,
+        "note": "not executed in this matrix run"
+      },
+      "promptOrSetupBlockerObserved": "unknown_not_directly_observed",
+      "evidence": [
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase1_stable_ls_run1/evidence/state-after-launch.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase1_stable_ls_run1/evidence/preflight-response.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase1_stable_ls_run1/evidence/insert-response.json"
+      ]
+    },
+    {
+      "id": "phase1_stable_ls_run2",
+      "phase": "phase1-baseline",
+      "category": "A",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "bundleCDHash": "f6d47345d23d4e0655ff673cad5c31eee9cd1ada",
+      "startMethod": "launchservices_open",
+      "bundleRebuiltOrReplacedSinceGrant": false,
+      "runtimeDir": "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase1_stable_ls_run2/runtime",
+      "preflight": {
+        "status": "ready",
+        "accessibilityTrusted": true,
+        "blockedReason": null
+      },
+      "insert": {
+        "status": "succeeded",
+        "accessibilityTrusted": true,
+        "blockedReason": null,
+        "syntheticPastePosted": true,
+        "blockedByAccessibility": false
+      },
+      "hotkey": {
+        "executed": false,
+        "blockedByAccessibility": null,
+        "note": "not executed in this matrix run"
+      },
+      "promptOrSetupBlockerObserved": "unknown_not_directly_observed",
+      "evidence": [
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase1_stable_ls_run2/evidence/state-after-launch.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase1_stable_ls_run2/evidence/preflight-response.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase1_stable_ls_run2/evidence/insert-response.json"
+      ]
+    },
+    {
+      "id": "phase3_stable_direct",
+      "phase": "phase3-launch-separation",
+      "category": "A",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "bundleCDHash": "f6d47345d23d4e0655ff673cad5c31eee9cd1ada",
+      "startMethod": "direct_executable",
+      "bundleRebuiltOrReplacedSinceGrant": false,
+      "runtimeDir": "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase3_stable_direct/runtime",
+      "preflight": {
+        "status": "ready",
+        "accessibilityTrusted": true,
+        "blockedReason": null
+      },
+      "insert": {
+        "status": "succeeded",
+        "accessibilityTrusted": true,
+        "blockedReason": null,
+        "syntheticPastePosted": true,
+        "blockedByAccessibility": false
+      },
+      "hotkey": {
+        "executed": false,
+        "blockedByAccessibility": null,
+        "note": "not executed in this matrix run"
+      },
+      "promptOrSetupBlockerObserved": "unknown_not_directly_observed",
+      "evidence": [
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase3_stable_direct/evidence/preflight-response.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase3_stable_direct/evidence/insert-response.json"
+      ]
+    },
+    {
+      "id": "phase3_stable_control",
+      "phase": "phase3-launch-separation",
+      "category": "A",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "bundleCDHash": "f6d47345d23d4e0655ff673cad5c31eee9cd1ada",
+      "startMethod": "control_wrapper",
+      "bundleRebuiltOrReplacedSinceGrant": false,
+      "runtimeDir": "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase3_stable_control/runtime",
+      "preflight": {
+        "status": "ready",
+        "accessibilityTrusted": true,
+        "blockedReason": null
+      },
+      "insert": {
+        "status": "succeeded",
+        "accessibilityTrusted": true,
+        "blockedReason": null,
+        "syntheticPastePosted": true,
+        "blockedByAccessibility": false
+      },
+      "hotkey": {
+        "executed": false,
+        "blockedByAccessibility": null,
+        "note": "not executed in this matrix run"
+      },
+      "promptOrSetupBlockerObserved": "unknown_not_directly_observed",
+      "harnessNote": "control launch reported timeout but runtime and responses were produced",
+      "evidence": [
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase3_stable_control/evidence/control-launch.stderr",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase3_stable_control/evidence/preflight-response.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase3_stable_control/evidence/insert-response.json"
+      ]
+    },
+    {
+      "id": "phase2_old_candidate_ls",
+      "phase": "phase2-rebuild-bundle-drift",
+      "category": "B",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product-candidate/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "bundleCDHash": "461a4ebceba89aa627aa82430d24695cae4f0def",
+      "startMethod": "launchservices_open",
+      "bundleRebuiltOrReplacedSinceGrant": true,
+      "runtimeDir": "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_old_candidate_ls/runtime",
+      "preflight": {
+        "status": "blocked",
+        "accessibilityTrusted": false,
+        "blockedReason": "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V."
+      },
+      "insert": {
+        "status": "blocked",
+        "accessibilityTrusted": false,
+        "blockedReason": "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V.",
+        "syntheticPastePosted": false,
+        "blockedByAccessibility": true
+      },
+      "hotkey": {
+        "executed": false,
+        "blockedByAccessibility": null,
+        "note": "not executed in this matrix run"
+      },
+      "promptOrSetupBlockerObserved": "unknown_not_directly_observed",
+      "evidence": [
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_old_candidate_ls/evidence/state-after-launch.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_old_candidate_ls/evidence/preflight-response.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_old_candidate_ls/evidence/insert-response.json"
+      ]
+    },
+    {
+      "id": "phase2_same_path_after_promote_ls",
+      "phase": "phase2-rebuild-bundle-drift",
+      "category": "B",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "bundleCDHash": "461a4ebceba89aa627aa82430d24695cae4f0def",
+      "startMethod": "launchservices_open",
+      "bundleRebuiltOrReplacedSinceGrant": true,
+      "runtimeDir": "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_ls/runtime",
+      "preflight": {
+        "status": "blocked",
+        "accessibilityTrusted": false,
+        "blockedReason": "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V."
+      },
+      "insert": {
+        "status": "blocked",
+        "accessibilityTrusted": false,
+        "blockedReason": "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V.",
+        "syntheticPastePosted": false,
+        "blockedByAccessibility": true
+      },
+      "hotkey": {
+        "executed": false,
+        "blockedByAccessibility": null,
+        "note": "not executed in this matrix run"
+      },
+      "promptOrSetupBlockerObserved": "unknown_not_directly_observed",
+      "evidence": [
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_ls/evidence/state-after-launch.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_ls/evidence/preflight-response.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_ls/evidence/insert-response.json"
+      ]
+    },
+    {
+      "id": "phase2_same_path_after_promote_direct",
+      "phase": "phase3-launch-separation",
+      "category": "C",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "bundleCDHash": "461a4ebceba89aa627aa82430d24695cae4f0def",
+      "startMethod": "direct_executable",
+      "bundleRebuiltOrReplacedSinceGrant": true,
+      "runtimeDir": "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_direct/runtime",
+      "preflight": {
+        "status": "ready",
+        "accessibilityTrusted": true,
+        "blockedReason": null
+      },
+      "insert": {
+        "status": "succeeded",
+        "accessibilityTrusted": true,
+        "blockedReason": null,
+        "syntheticPastePosted": true,
+        "blockedByAccessibility": false
+      },
+      "hotkey": {
+        "executed": false,
+        "blockedByAccessibility": null,
+        "note": "not executed in this matrix run"
+      },
+      "promptOrSetupBlockerObserved": "unknown_not_directly_observed",
+      "comparisonNote": "same bundle hash is blocked on LaunchServices but ready on direct executable",
+      "evidence": [
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_direct/evidence/preflight-response.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_direct/evidence/insert-response.json"
+      ]
+    },
+    {
+      "id": "phase2_same_path_after_promote_control",
+      "phase": "phase3-launch-separation",
+      "category": "C",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "bundleCDHash": "461a4ebceba89aa627aa82430d24695cae4f0def",
+      "startMethod": "control_wrapper",
+      "bundleRebuiltOrReplacedSinceGrant": true,
+      "runtimeDir": "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_control/runtime",
+      "preflight": {
+        "status": "ready",
+        "accessibilityTrusted": true,
+        "blockedReason": null
+      },
+      "insert": {
+        "status": "succeeded",
+        "accessibilityTrusted": true,
+        "blockedReason": null,
+        "syntheticPastePosted": true,
+        "blockedByAccessibility": false
+      },
+      "hotkey": {
+        "executed": false,
+        "blockedByAccessibility": null,
+        "note": "not executed in this matrix run"
+      },
+      "promptOrSetupBlockerObserved": "unknown_not_directly_observed",
+      "harnessNote": "control launch timeout still occurred, but runtime responses are ready/succeeded",
+      "comparisonNote": "same bundle hash is blocked on LaunchServices but ready on control wrapper path",
+      "evidence": [
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_control/evidence/control-launch.stderr",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_control/evidence/preflight-response.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_same_path_after_promote_control/evidence/insert-response.json"
+      ]
+    },
+    {
+      "id": "phase2_stable_after_rollback_ls",
+      "phase": "phase2-rebuild-bundle-drift",
+      "category": "A",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "bundleID": "ch.baumanncreative.pushwrite",
+      "bundleCDHash": "f6d47345d23d4e0655ff673cad5c31eee9cd1ada",
+      "startMethod": "launchservices_open",
+      "bundleRebuiltOrReplacedSinceGrant": true,
+      "runtimeDir": "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_stable_after_rollback_ls/runtime",
+      "preflight": {
+        "status": "ready",
+        "accessibilityTrusted": true,
+        "blockedReason": null
+      },
+      "insert": {
+        "status": "succeeded",
+        "accessibilityTrusted": true,
+        "blockedReason": null,
+        "syntheticPastePosted": true,
+        "blockedByAccessibility": false
+      },
+      "hotkey": {
+        "executed": false,
+        "blockedByAccessibility": null,
+        "note": "not executed in this matrix run"
+      },
+      "promptOrSetupBlockerObserved": "unknown_not_directly_observed",
+      "evidence": [
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_stable_after_rollback_ls/evidence/preflight-response.json",
+        "/tmp/pushwrite-003c/matrix-20260419T055834Z/cases/phase2_stable_after_rollback_ls/evidence/insert-response.json"
+      ]
+    }
+  ],
+  "supplementalHotkeyRuns": [
+    {
+      "id": "hotkey_probe_stable_ls",
+      "category": "A",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product/PushWrite.app",
+      "startMethod": "launchservices_open",
+      "runtimeDir": "/tmp/pushwrite-003c/hotkey-probe-stable-ls",
+      "hotkeyResponse": {
+        "status": "failed",
+        "kind": "recordAudio",
+        "accessibilityTrusted": true,
+        "blockedReason": null,
+        "blockedByAccessibility": false
+      },
+      "evidence": [
+        "/tmp/pushwrite-003c/hotkey-probe-stable-ls/logs/last-hotkey-response.json"
+      ]
+    },
+    {
+      "id": "hotkey_probe_old_candidate_ls",
+      "category": "B",
+      "bundlePath": "/Users/michel/Code/pushwrite/build/pushwrite-product-candidate/PushWrite.app",
+      "startMethod": "launchservices_open",
+      "runtimeDir": "/tmp/pushwrite-003c/hotkey-probe-old-candidate-ls",
+      "hotkeyResponse": {
+        "status": "blocked",
+        "kind": "insertTranscription",
+        "accessibilityTrusted": false,
+        "blockedReason": "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V.",
+        "blockedByAccessibility": true
+      },
+      "evidence": [
+        "/tmp/pushwrite-003c/hotkey-probe-old-candidate-ls/logs/last-hotkey-response.json"
+      ]
+    }
+  ],
+  "separation": {
+    "productPath": [
+      "Blocked runs consistently return the same accessibility blocked reason.",
+      "Insert is consistently prevented in blocked runs (syntheticPastePosted=false)."
+    ],
+    "bundleRebuildDrift": [
+      "LaunchServices on hash f6d473... is ready/trusted.",
+      "LaunchServices on hash 461a4e... is blocked/untrusted.",
+      "Rollback from 461a4e... to f6d473... restores LaunchServices trust."
+    ],
+    "launchPathArtifact": [
+      "For hash 461a4e..., LaunchServices is blocked while direct and control wrapper are ready.",
+      "Therefore direct/control can produce false-green trust observations for QA."
+    ],
+    "systemTCC": [
+      "System TCC row for ch.baumanncreative.pushwrite stayed unchanged across promote and rollback in this run.",
+      "Observed trust still changed with bundle identity and launch path."
+    ]
+  },
+  "overallDecision": {
+    "primary": "bundle_rebuild_theme",
+    "alsoConfirmed": "launch_path_artifact",
+    "productProblemPlausible": false,
+    "statement": "Accessibility trust drift is primarily bundle/rebuild related on the real LaunchServices path; launch path choice can mask this drift in QA."
+  },
+  "singleNextRecommendation": "Use LaunchServices-started stable bundle + explicit bundle path and CDHash as the only source of truth for accessibility trust assertions in QA; treat direct/control starts as secondary diagnostics only."
+}
