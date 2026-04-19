@@ -16,6 +16,8 @@ struct Options {
     var skipBuild = false
     var skipLaunch = false
     var skipBlockedValidation = false
+    var forceAccessibilityTrustedOnLaunch = false
+    var forceAccessibilityBlockedOnLaunch = false
 }
 
 struct AppSnapshot: Codable {
@@ -266,6 +268,10 @@ func parseOptions(arguments: [String]) throws -> Options {
             options.skipLaunch = true
         case "--skip-blocked-validation":
             options.skipBlockedValidation = true
+        case "--force-accessibility-trusted":
+            options.forceAccessibilityTrustedOnLaunch = true
+        case "--force-accessibility-blocked":
+            options.forceAccessibilityBlockedOnLaunch = true
         default:
             throw ValidationError.unknownArgument(argument)
         }
@@ -1084,8 +1090,8 @@ func main() -> Int32 {
                 productAppPath: productAppURL.path,
                 runtimeDir: options.successRuntimeDir,
                 simulatedText: options.simulatedText,
-                forceAccessibilityBlocked: false,
-                forceAccessibilityTrusted: false
+                forceAccessibilityBlocked: options.forceAccessibilityBlockedOnLaunch,
+                forceAccessibilityTrusted: options.forceAccessibilityTrustedOnLaunch
             )
         }
     } catch {
@@ -1105,10 +1111,10 @@ func main() -> Int32 {
         hotKeyRegistrationError: successLaunchState.hotKey.registrationError,
         launchFlowState: successLaunchState.flow.state,
         launchFlowTrigger: successLaunchState.flow.trigger,
-        forceAccessibilityTrusted: false,
+        forceAccessibilityTrusted: options.forceAccessibilityTrustedOnLaunch,
         notes: successLaunchState.accessibilityTrusted
             ? []
-            : ["Accessibility is not trusted for the selected product bundle. Success-path validation was skipped; blocked-path observation ran against the real bundle/runtime instead."]
+            : ["Accessibility is not trusted for the selected product bundle. Success-path validation was skipped."]
     )
 
     guard preflight.hotKeyRegistered else {
@@ -1117,6 +1123,55 @@ func main() -> Int32 {
     }
 
     if !preflight.accessibilityTrusted {
+        if options.skipBlockedValidation {
+            let summary = ValidationSummary(
+                timestamp: isoTimestamp(),
+                simulatedText: options.simulatedText,
+                productAppPath: productAppURL.path,
+                successRuntimeDir: options.successRuntimeDir,
+                blockedRuntimeDir: options.successRuntimeDir,
+                manualLaunchCommand: launchCommand(
+                    repoRoot: repoRoot,
+                    productAppPath: productAppURL.path,
+                    runtimeDir: options.successRuntimeDir,
+                    simulatedText: options.simulatedText,
+                    forceAccessibilityBlocked: options.forceAccessibilityBlockedOnLaunch,
+                    forceAccessibilityTrusted: options.forceAccessibilityTrustedOnLaunch
+                ),
+                successCriteria: hotKeySuccessCriteria(),
+                preflight: preflight,
+                textEdit: emptyContextSummary(name: "textedit"),
+                safari: emptyContextSummary(name: "safari"),
+                blocked: nil,
+                successFlowEventsLogFile: "\(options.successRuntimeDir)/logs/flow-events.jsonl",
+                blockedFlowEventsLogFile: "",
+                lastHotKeyResponseFile: "\(options.successRuntimeDir)/logs/last-hotkey-response.json"
+            )
+
+            if let resultsFile = options.resultsFile {
+                do {
+                    try writeSummary(summary, to: resultsFile)
+                } catch {
+                    fputs("Could not write results file: \(error)\n", stderr)
+                    return 1
+                }
+            }
+
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            do {
+                let data = try encoder.encode(summary)
+                if let string = String(data: data, encoding: .utf8) {
+                    print(string)
+                }
+            } catch {
+                fputs("Could not encode summary: \(error)\n", stderr)
+                return 1
+            }
+
+            return 0
+        }
+
         let blockedSummary: BlockedHotKeySummary
         do {
             blockedSummary = try runBlockedHotKeyValidation(
@@ -1138,7 +1193,9 @@ func main() -> Int32 {
                 repoRoot: repoRoot,
                 productAppPath: productAppURL.path,
                 runtimeDir: options.successRuntimeDir,
-                simulatedText: options.simulatedText
+                simulatedText: options.simulatedText,
+                forceAccessibilityBlocked: options.forceAccessibilityBlockedOnLaunch,
+                forceAccessibilityTrusted: options.forceAccessibilityTrustedOnLaunch
             ),
             successCriteria: hotKeySuccessCriteria(),
             preflight: preflight,
@@ -1263,7 +1320,9 @@ func main() -> Int32 {
             repoRoot: repoRoot,
             productAppPath: productAppURL.path,
             runtimeDir: options.successRuntimeDir,
-            simulatedText: options.simulatedText
+            simulatedText: options.simulatedText,
+            forceAccessibilityBlocked: options.forceAccessibilityBlockedOnLaunch,
+            forceAccessibilityTrusted: options.forceAccessibilityTrustedOnLaunch
         ),
         successCriteria: hotKeySuccessCriteria(),
         preflight: preflight,
