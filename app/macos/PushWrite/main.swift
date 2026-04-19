@@ -62,6 +62,13 @@ enum LocalUserFeedback: String, Codable {
     case blockedPanel
 }
 
+enum HotKeyTerminalFeedbackCase: String, Codable {
+    case tooShortRecording
+    case transcriptionFailed
+    case noUsableText
+    case insertFailed
+}
+
 var runtimeAccessibilityBlockedOverride = false
 var runtimeAccessibilityTrustedOverride = false
 var runtimeMicrophoneDeniedOverride = false
@@ -1538,6 +1545,74 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func localUserFeedbackForTranscriptionGate(_ gate: TranscriptionInsertGate) -> LocalUserFeedback? {
+        switch gate {
+        case .transcriptionSkipped, .transcriptionFailed, .emptyTranscriptionText, .whitespaceOnlyTranscriptionText, .empty, .tooShort:
+            return .blockedPanel
+        case .passed:
+            return nil
+        }
+    }
+
+    private func makeHotKeyTerminalFeedbackDescriptor(for response: ProductResponse) -> (
+        feedbackCase: HotKeyTerminalFeedbackCase,
+        title: String,
+        message: String
+    )? {
+        guard response.kind == .insertTranscription else {
+            return nil
+        }
+
+        if response.transcriptionInsertGate == .passed {
+            guard response.status != .succeeded else {
+                return nil
+            }
+            return (
+                feedbackCase: .insertFailed,
+                title: "Text nicht eingefuegt",
+                message: "Text konnte nicht eingefuegt werden."
+            )
+        }
+
+        guard let gate = response.transcriptionInsertGate else {
+            return nil
+        }
+
+        switch gate {
+        case .transcriptionSkipped, .tooShort:
+            return (
+                feedbackCase: .tooShortRecording,
+                title: "Kein Text eingefuegt",
+                message: "Kein Text eingefuegt. Aufnahme zu kurz."
+            )
+        case .transcriptionFailed:
+            return (
+                feedbackCase: .transcriptionFailed,
+                title: "Kein Text eingefuegt",
+                message: "Kein Text eingefuegt. Transkription fehlgeschlagen."
+            )
+        case .emptyTranscriptionText, .whitespaceOnlyTranscriptionText, .empty:
+            return (
+                feedbackCase: .noUsableText,
+                title: "Kein Text eingefuegt",
+                message: "Kein Text eingefuegt. Kein brauchbarer Text erkannt."
+            )
+        case .passed:
+            return nil
+        }
+    }
+
+    private func presentTerminalHotKeyFeedback(title: String, message: String) {
+        presentFeedbackPanel(
+            windowTitle: "PushWrite",
+            title: title,
+            message: message,
+            primaryButtonTitle: nil,
+            dismissButtonTitle: "OK",
+            onPrimaryAction: nil
+        )
+    }
+
     private func presentMicrophonePermissionBlockedUI(blockedReason: String) {
         let bundleName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "PushWrite"
         presentFeedbackPanel(
@@ -2004,7 +2079,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 transcriptionArtifact: transcriptionArtifact,
                 transcriptionResult: transcriptionResult,
                 transcriptionInsertGate: reason,
-                gatedTranscriptionFeedback: nil
+                gatedTranscriptionFeedback: nil,
+                localUserFeedback: localUserFeedbackForTranscriptionGate(reason)
             )
             let insertResult = InsertResult(
                 id: session.flowID,
@@ -2158,7 +2234,10 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         transcriptionArtifact: TranscriptionArtifact?,
         transcriptionInsertGate: TranscriptionInsertGate
     ) -> ProductResponse {
-        ProductResponse(
+        let localUserFeedback: LocalUserFeedback? = insertResponse.status == .succeeded
+            ? insertResponse.localUserFeedback
+            : .blockedPanel
+        return ProductResponse(
             id: insertResponse.id,
             kind: .insertTranscription,
             timestamp: insertResponse.timestamp,
@@ -2195,7 +2274,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingArtifact: recordingArtifact,
             transcriptionArtifact: transcriptionArtifact,
             transcribingPlaceholder: false,
-            localUserFeedback: insertResponse.localUserFeedback,
+            localUserFeedback: localUserFeedback,
             error: insertResponse.error
         )
     }
@@ -2209,7 +2288,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         transcriptionArtifact: TranscriptionArtifact?,
         transcriptionResult: TranscriptionResult,
         transcriptionInsertGate: TranscriptionInsertGate,
-        gatedTranscriptionFeedback: GatedTranscriptionFeedback?
+        gatedTranscriptionFeedback: GatedTranscriptionFeedback?,
+        localUserFeedback: LocalUserFeedback?
     ) -> ProductResponse {
         let status: ProductResponseStatus = transcriptionResult.status == .failed ? .failed : .succeeded
         let error = transcriptionResult.status == .failed ? transcriptionResult.error : nil
@@ -2250,7 +2330,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             recordingArtifact: recordingArtifact,
             transcriptionArtifact: transcriptionArtifact,
             transcribingPlaceholder: false,
-            localUserFeedback: gatedTranscriptionFeedback == nil ? nil : .systemBeep,
+            localUserFeedback: localUserFeedback,
             error: error
         )
     }
@@ -2618,6 +2698,26 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             localUserFeedback: response.localUserFeedback
         )
         logHotKeyRecordingEvent(flowID: flowID, event: "flow-returned-idle", detail: nil)
+
+        if response.kind == .insertTranscription {
+            let terminalFeedback = makeHotKeyTerminalFeedbackDescriptor(for: response)
+            logHotKeyRecordingEvent(
+                flowID: flowID,
+                event: "local-feedback-evaluated",
+                detail: "feedbackCase=\(terminalFeedback?.feedbackCase.rawValue ?? "none"),insertStatus=\(response.status.rawValue),insertGate=\(response.transcriptionInsertGate?.rawValue ?? "none")"
+            )
+            if let terminalFeedback {
+                presentTerminalHotKeyFeedback(
+                    title: terminalFeedback.title,
+                    message: terminalFeedback.message
+                )
+                logHotKeyRecordingEvent(
+                    flowID: flowID,
+                    event: "local-feedback-triggered",
+                    detail: "feedbackCase=\(terminalFeedback.feedbackCase.rawValue),channel=\(response.localUserFeedback?.rawValue ?? "none")"
+                )
+            }
+        }
 
         processNextRequestIfNeeded()
     }
