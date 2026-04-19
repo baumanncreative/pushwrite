@@ -2,6 +2,12 @@
   "task": "003A",
   "title": "implement minimal microphone permission and blocked flow at real recording intent",
   "timestamp": "2026-04-18T11:34:32Z",
+  "status": {
+    "implemented": true,
+    "productLikeViable": true,
+    "partiallyRealVerified": true,
+    "knownQaRestriction": "real deny -> previously denied verification"
+  },
   "bundleValidation": {
     "bundleHasMicrophoneUsageDescription": true,
     "bundleMicrophoneUsageDescription": "PushWrite needs microphone access to record speech from the global push-to-talk hotkey.",
@@ -29,6 +35,18 @@
     ]
   },
   "validation": {
+    "realValidation": {
+      "confirmed": [
+        "no microphone prompt on launch",
+        "real notDetermined to allow path",
+        "real allowed path"
+      ],
+      "open": [
+        "real terminal notDetermined to denied first run",
+        "real previously denied follow-up run"
+      ],
+      "assessment": "known QA/interactions restriction only; no product defect currently demonstrated"
+    },
     "recordingValidation": {
       "script": "/Users/michel/Code/pushwrite/scripts/run_pushwrite_recording_validation.sh",
       "productAppPath": "/private/tmp/pushwrite-003a-build/PushWrite.app",
@@ -94,7 +112,8 @@
     "/Users/michel/Code/pushwrite/docs/execution/003A-results-implement-minimal-microphone-permission-and-blocked-flow-at-real-recording-intent.json"
   ],
   "knownLimits": [
-    "A real TCC reset was not performed on this workstation.",
-    "The real OS first-prompt was therefore not re-observed outside the deterministic validator overrides."
+    "Real verification is currently partial.",
+    "The real terminal notDetermined to denied first run and the dependent previously denied follow-up run remain a known QA/interactions restriction.",
+    "Deterministic validator coverage remains in place for those two cases."
   ]
 }

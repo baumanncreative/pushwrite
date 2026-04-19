@@ -2,6 +2,11 @@
 
 ## Kurzfassung
 
+- Status:
+  - `003A = implementiert`
+  - `003A = produktnah tragfaehig`
+  - `003A = teilweise real verifiziert`
+  - `deny -> previously denied = bekannte QA-Restriktion`
 - Der Mikrofon-Check bleibt strikt am realen Aufnahmezeitpunkt im Hotkey-Down-Pfad.
 - `NSMicrophoneUsageDescription` ist im Produktbundle vorhanden und wurde im gebauten Bundle verifiziert.
 - `notDetermined` fuehrt jetzt nur bei echter Aufnahmeabsicht in die Systemabfrage; der Lauf geht danach entweder direkt ehrlich in `recording` ueber oder endet sauber `blocked`.
@@ -69,7 +74,15 @@
   - `blocked_accessibility`: `build/pushwrite-product/runtime-003a-accessibility-blocked`
   - `inference_failure`: `build/pushwrite-product/runtime-003a-inference-failure`
 - Ergebnis:
-  - alle 003A-Szenarien gruen
+  - Implementations- und Produktflussvalidierung aller 003A-Szenarien gruen
+  - real bestaetigt:
+    - kein Mic-Prompt beim Launch
+    - realer `notDetermined -> allow`-Pfad
+    - realer `allowed`-Pfad
+  - offen:
+    - reale Verifikation des terminalen `notDetermined -> denied`-Erstlaufs
+    - reale Verifikation des davon abhaengigen `previously denied`-Folgelaufs
+  - dieser Restpunkt wird als bekannte QA-/Interaktionsrestriktion gefuehrt und blockiert den aktuellen Produktfortschritt nicht
 
 ### 002K Regressionsvalidierung des Insert-Pfads
 
@@ -114,6 +127,8 @@
 
 ## Risiken und Grenzen
 
-- Der echte macOS-Erstprompt wurde auf dieser Workstation nicht ueber einen echten TCC-Reset neu beobachtet, weil der reale Startzustand bereits `granted` war.
-- Fuer `mic_not_determined_allow` und `mic_not_determined_deny` wurde deshalb dieselbe Produktintegration mit deterministischen Runtime-Overrides validiert, nicht mit TCC-Reset.
+- Die reale Verifikation deckt derzeit `launch ohne Prompt`, `allowed` und `notDetermined -> allow` ab.
+- Offen bleibt ausschliesslich die reale Verifikation des terminalen `notDetermined -> denied`-Erstlaufs und des daraus folgenden `previously denied`-Folgelaufs.
+- Fuer diese beiden Faelle liegt aktuell kein nachgewiesener Produktfehler vor; sie werden als bekannte QA-/Interaktionsrestriktion gefuehrt.
+- Deterministische Validator-Overrides bestehen weiterhin fuer die technische Produktflusspruefung von `notDetermined -> denied` und `previously denied`.
 - Der bestehende unversionierte Auftragsrahmen `docs/execution/003A-implement-minimal-microphone-permission-and-blocked-flow-at-real-recording-intent.md` wurde nicht veraendert.
