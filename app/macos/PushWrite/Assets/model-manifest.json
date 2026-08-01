@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "model": "ggml-tiny.bin",
+  "family": "OpenAI Whisper tiny multilingual",
+  "runtime": "whisper.cpp 1.8.1",
+  "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
+  "sha256": "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+  "sizeBytes": 77691713,
+  "license": "MIT"
+}
