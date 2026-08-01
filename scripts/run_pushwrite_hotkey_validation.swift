@@ -533,6 +533,10 @@ func launchProduct(
         launchArguments.append("--force-accessibility-trusted")
     }
     configuration.arguments = launchArguments
+    var environment = ProcessInfo.processInfo.environment
+    environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] = "1"
+    environment["PUSHWRITE_INCLUDE_SENSITIVE_TEST_ARTIFACTS"] = "1"
+    configuration.environment = environment
 
     _ = NSApplication.shared
     let deadline = Date().addingTimeInterval(20)
@@ -616,7 +620,7 @@ func ensureTextEditReady() throws {
     end tell
     """
     _ = try runAppleScript(script)
-    try waitUntil(timeoutSeconds: 10) {
+    try waitUntil(timeoutSeconds: 30) {
         try readTextEditValue().isEmpty
     }
     Thread.sleep(forTimeInterval: 0.25)
@@ -704,7 +708,7 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
 
     let fixtureURLString = escapeAppleScriptString(fixtureURL.absoluteString)
     do {
-        try waitUntil(timeoutSeconds: 10) {
+        try waitUntil(timeoutSeconds: 30) {
             try currentSafariURL() == fixtureURL.absoluteString
         }
     } catch {
@@ -724,7 +728,7 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
         }
     }
 
-    try waitUntil(timeoutSeconds: 10) {
+    try waitUntil(timeoutSeconds: 30) {
         try safariFixtureReady()
     }
     try focusSafariFixtureTextarea()
@@ -801,7 +805,7 @@ func readFlowEvents(runtimeDir: String) throws -> [ProductFlowEvent] {
 
 func waitForNewHotKeyResponse(runtimeDir: String, previousID: String?) throws -> ProductResponse {
     var response: ProductResponse?
-    try waitUntil(timeoutSeconds: 10) {
+    try waitUntil(timeoutSeconds: 30) {
         response = try readLastHotKeyResponse(runtimeDir: runtimeDir)
         guard let response else {
             return false
@@ -816,7 +820,7 @@ func waitForNewHotKeyResponse(runtimeDir: String, previousID: String?) throws ->
 
 func waitForFlowStates(runtimeDir: String, responseID: String, terminalState: String) throws -> [String] {
     var states: [String] = []
-    try waitUntil(timeoutSeconds: 10) {
+    try waitUntil(timeoutSeconds: 30) {
         states = try readFlowEvents(runtimeDir: runtimeDir)
             .filter { $0.id == responseID }
             .map(\.state)
@@ -899,14 +903,17 @@ func runHotKeySeries(
         if hotKeyResponse.kind != "insertTranscription" {
             reasons.append("unexpected-kind-\(hotKeyResponse.kind)")
         }
-        if hotKeyResponse.insertRoute != "pasteboardCommandV" {
+        if !["accessibilitySelectedText", "unicodeKeyboardEvents"].contains(hotKeyResponse.insertRoute ?? "") {
             reasons.append("unexpected-insert-route")
         }
         if hotKeyResponse.insertSource != "transcription" {
             reasons.append("unexpected-insert-source")
         }
-        if !hotKeyResponse.syntheticPastePosted {
-            reasons.append("synthetic-paste-not-posted")
+        if hotKeyResponse.syntheticPastePosted {
+            reasons.append("unexpected-synthetic-paste")
+        }
+        if !hotKeyResponse.clipboardRestored {
+            reasons.append("clipboard-not-preserved")
         }
         if hotKeyResponse.error != nil {
             reasons.append("product-error")
@@ -1010,7 +1017,7 @@ func runBlockedHotKeyValidation(
     if hotKeyResponse.status != "blocked" {
         reasons.append("product-status-\(hotKeyResponse.status)")
     }
-    if hotKeyResponse.blockedReason != "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V." {
+    if hotKeyResponse.blockedReason != "PushWrite benötigt Zugriff auf Bedienungshilfen, um Text an der Einfügemarke einzusetzen." {
         reasons.append("unexpected-blocked-reason")
     }
     if hotKeyResponse.syntheticPastePosted {

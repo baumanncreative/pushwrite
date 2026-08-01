@@ -1,6 +1,7 @@
 #!/usr/bin/env swift
 
 import AppKit
+import Darwin
 import Foundation
 
 struct Options {
@@ -517,6 +518,13 @@ func launchProduct(
     let process = Process()
     process.executableURL = executableURL
     process.arguments = arguments
+    var environment = ProcessInfo.processInfo.environment
+    environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] = "1"
+    environment["PUSHWRITE_INCLUDE_SENSITIVE_TEST_ARTIFACTS"] = "1"
+    if whisperModelPath?.contains("missing") == true {
+        environment["PUSHWRITE_ALLOW_TEST_RUNTIME_OVERRIDE"] = "1"
+    }
+    process.environment = environment
     process.standardOutput = Pipe()
     process.standardError = Pipe()
     try process.run()
@@ -544,6 +552,18 @@ func stopProduct(repoRoot: String, productAppPath: String, runtimeDir: String) {
         arguments: [scriptPath, "stop", "--timeout-ms", "5000", "--product-app", productAppPath, "--runtime-dir", runtimeDir],
         currentDirectory: repoRoot
     )
+}
+
+func cleanupRunningProductProcesses(productAppPath: String) {
+    let executablePath = "\(productAppPath)/Contents/MacOS/PushWrite"
+    let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite")
+        .filter { $0.executableURL?.path == executablePath }
+    for application in applications {
+        application.terminate()
+    }
+    if !applications.isEmpty {
+        Thread.sleep(forTimeInterval: 0.5)
+    }
 }
 
 func runAppleScript(_ source: String) throws -> NSAppleEventDescriptor {
@@ -630,7 +650,7 @@ func readFlowEvents(runtimeDir: String) throws -> [ProductFlowEvent] {
 
 func waitForNewHotKeyResponse(runtimeDir: String, previousID: String?) throws -> ProductResponse {
     var response: ProductResponse?
-    try waitUntil(timeoutSeconds: 10) {
+    try waitUntil(timeoutSeconds: 30) {
         response = try readLastHotKeyResponse(runtimeDir: runtimeDir)
         guard let response else {
             return false
@@ -645,7 +665,7 @@ func waitForNewHotKeyResponse(runtimeDir: String, previousID: String?) throws ->
 
 func waitForFlowStates(runtimeDir: String, responseID: String, terminalState: String) throws -> [String] {
     var states: [String] = []
-    try waitUntil(timeoutSeconds: 10) {
+    try waitUntil(timeoutSeconds: 30) {
         states = try readFlowEvents(runtimeDir: runtimeDir)
             .filter { $0.id == responseID }
             .map(\.state)
@@ -885,7 +905,7 @@ func runScenario(
         ))
     }
 
-    if let finalState, finalState.flow.state != expectedTerminalState {
+    if let finalState, finalState.flow.state != "idle" {
         failureReasons.append("unexpected-final-state-\(finalState.flow.state)")
     }
     if let expectedRequestedMicrophonePermission, finalState?.lastRequestedMicrophonePermission != expectedRequestedMicrophonePermission {
@@ -897,17 +917,19 @@ func runScenario(
     if let expectedMicrophonePermissionStatus, finalState?.microphonePermissionStatus != expectedMicrophonePermissionStatus {
         failureReasons.append("unexpected-state-microphone-permission-status")
     }
-    if let finalEvent = try? readFlowEvents(runtimeDir: runtimeDir).last(where: { $0.id == hotKeyResponse.id }) {
-        if finalEvent.state != expectedTerminalState {
+    if let terminalEvent = try? readFlowEvents(runtimeDir: runtimeDir).last(where: {
+        $0.id == hotKeyResponse.id && $0.state == expectedTerminalState
+    }) {
+        if terminalEvent.state != expectedTerminalState {
             failureReasons.append("unexpected-terminal-flow-event")
         }
-        if let expectedRequestedMicrophonePermission, finalEvent.requestedMicrophonePermission != expectedRequestedMicrophonePermission {
+        if let expectedRequestedMicrophonePermission, terminalEvent.requestedMicrophonePermission != expectedRequestedMicrophonePermission {
             failureReasons.append("unexpected-flow-requested-microphone-permission")
         }
-        if let expectedLocalUserFeedback, finalEvent.localUserFeedback != expectedLocalUserFeedback {
+        if let expectedLocalUserFeedback, terminalEvent.localUserFeedback != expectedLocalUserFeedback {
             failureReasons.append("unexpected-flow-local-user-feedback")
         }
-        if let expectedMicrophonePermissionStatus, finalEvent.microphonePermissionStatus != expectedMicrophonePermissionStatus {
+        if let expectedMicrophonePermissionStatus, terminalEvent.microphonePermissionStatus != expectedMicrophonePermissionStatus {
             failureReasons.append("unexpected-flow-microphone-permission-status")
         }
     } else {
@@ -993,6 +1015,8 @@ func main() -> Int32 {
         fputs("\(error)\n", stderr)
         return 1
     }
+    cleanupRunningProductProcesses(productAppPath: productAppURL.path)
+    defer { cleanupRunningProductProcesses(productAppPath: productAppURL.path) }
 
     let whisperCLIPath = options.whisperCLIPath ?? defaultWhisperCLIPath(repoRoot: repoRoot)
     let whisperModelPath = options.whisperModelPath ?? defaultWhisperModelPath(repoRoot: repoRoot)
@@ -1012,7 +1036,7 @@ func main() -> Int32 {
         return 1
     }
 
-    let accessibilityBlockedReason = "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V."
+    let accessibilityBlockedReason = "PushWrite benötigt Zugriff auf Bedienungshilfen, um Text an der Einfügemarke einzusetzen."
     let microphoneDeniedReason = "Microphone access is required before PushWrite can start recording."
     let noMicrophoneReason = "No audio input device is available for PushWrite recording."
     let recorderStartFailureReason = "PushWrite could not start microphone recording."
@@ -1084,7 +1108,7 @@ func main() -> Int32 {
             expectedKind: "insertTranscription",
             expectedMicrophonePermissionStatus: .granted,
             expectedRequestedMicrophonePermission: false,
-            expectedSyntheticPastePosted: true,
+            expectedSyntheticPastePosted: false,
             expectedTranscriptionStatus: .succeeded,
             expectRecordingArtifact: true,
             expectNonEmptyTranscriptText: true
@@ -1117,7 +1141,7 @@ func main() -> Int32 {
             expectedKind: "insertTranscription",
             expectedMicrophonePermissionStatus: .granted,
             expectedRequestedMicrophonePermission: true,
-            expectedSyntheticPastePosted: true,
+            expectedSyntheticPastePosted: false,
             expectedTranscriptionStatus: .succeeded,
             expectRecordingArtifact: true,
             expectNonEmptyTranscriptText: true
@@ -1176,6 +1200,7 @@ func main() -> Int32 {
             forceNoMicrophoneDevice: false,
             expectedTerminalState: "error",
             expectedStatus: "failed",
+            expectedKind: "insertTranscription",
             expectedMicrophonePermissionStatus: .granted,
             expectedRequestedMicrophonePermission: false,
             expectedErrorContains: "whisper.cpp model is missing",

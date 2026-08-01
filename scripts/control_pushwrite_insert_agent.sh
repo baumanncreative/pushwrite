@@ -7,7 +7,7 @@ SOURCE_FILE="$ROOT_DIR/scripts/control_pushwrite_insert_agent.swift"
 OUTPUT_DIR="/tmp/pushwrite-insert-agent-tools"
 MODULE_CACHE_DIR="$OUTPUT_DIR/module-cache"
 TOOL_PATH="$OUTPUT_DIR/control_pushwrite_insert_agent"
-SDK_PATH="$(xcrun --show-sdk-path)"
+SDK_PATH="${PUSHWRITE_SDK_PATH:-$(xcrun --show-sdk-path)}"
 
 mkdir -p "$OUTPUT_DIR" "$MODULE_CACHE_DIR"
 
@@ -64,6 +64,7 @@ fi
 swiftc \
   -module-cache-path "$MODULE_CACHE_DIR" \
   -sdk "$SDK_PATH" \
+  -target arm64-apple-macos13.0 \
   -framework AppKit \
   "$SOURCE_FILE" \
   -o "$TOOL_PATH"

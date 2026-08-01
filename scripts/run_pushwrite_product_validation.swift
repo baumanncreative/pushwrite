@@ -409,6 +409,10 @@ func launchProduct(repoRoot: String, productAppPath: String, runtimeDir: String)
     configuration.activates = false
     configuration.createsNewApplicationInstance = true
     configuration.arguments = ["--runtime-dir", runtimeDir]
+    var environment = ProcessInfo.processInfo.environment
+    environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] = "1"
+    environment["PUSHWRITE_INCLUDE_SENSITIVE_TEST_ARTIFACTS"] = "1"
+    configuration.environment = environment
 
     _ = NSApplication.shared
     let deadline = Date().addingTimeInterval(15)
@@ -771,7 +775,7 @@ func runContextSeries(
             reasons.append("unexpected-kind-\(productResponse.kind)")
         }
 
-        if productResponse.insertRoute != "pasteboardCommandV" {
+        if !["accessibilitySelectedText", "unicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
             reasons.append("unexpected-insert-route")
         }
 
@@ -779,8 +783,11 @@ func runContextSeries(
             reasons.append("unexpected-insert-source")
         }
 
-        if !productResponse.syntheticPastePosted {
-            reasons.append("synthetic-paste-not-posted")
+        if productResponse.syntheticPastePosted {
+            reasons.append("unexpected-synthetic-paste")
+        }
+        if !productResponse.clipboardRestored {
+            reasons.append("clipboard-not-preserved")
         }
 
         if productResponse.error != nil {
@@ -902,7 +909,7 @@ func runClipboardRestoreProbe(
     if productResponse.kind != "insertTranscription" {
         failures.append("unexpected-kind-\(productResponse.kind)")
     }
-    if productResponse.insertRoute != "pasteboardCommandV" {
+    if !["accessibilitySelectedText", "unicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
         failures.append("unexpected-insert-route")
     }
     if productResponse.insertSource != "transcription" {
