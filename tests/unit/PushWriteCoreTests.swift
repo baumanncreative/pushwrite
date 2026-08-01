@@ -82,7 +82,19 @@ enum PushWriteCoreTestRunner {
         )
         try expect(
             InsertionTargetPolicy.evaluate(protectedContent: false, editable: nil) == .allow,
-            "unknown editability must allow the compatibility fallback"
+            "unknown editability must allow an Accessibility selected-text attempt"
+        )
+        try expect(
+            InsertionTargetPolicy.allowsUnicodeKeyboardFallback(editable: nil, role: "AXTextArea"),
+            "known text roles must allow the Unicode keyboard compatibility fallback"
+        )
+        try expect(
+            !InsertionTargetPolicy.allowsUnicodeKeyboardFallback(editable: nil, role: "AXOutline"),
+            "non-text roles must not receive Unicode keyboard events"
+        )
+        try expect(
+            !InsertionTargetPolicy.allowsUnicodeKeyboardFallback(editable: nil, role: nil),
+            "unknown targets must not receive Unicode keyboard events"
         )
     }
 }

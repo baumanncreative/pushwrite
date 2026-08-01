@@ -515,9 +515,8 @@ func stopProduct(repoRoot: String, productAppPath: String, runtimeDir: String) {
 }
 
 func cleanupRunningProductProcesses(productAppPath: String) {
-    let executablePath = "\(productAppPath)/Contents/MacOS/PushWrite"
+    _ = productAppPath
     let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite")
-        .filter { $0.executableURL?.path == executablePath }
     for application in applications {
         application.terminate()
     }
@@ -810,7 +809,7 @@ func runSuccessScenario(
     if response.gatedTranscriptionFeedback != nil {
         failureReasons.append("unexpected-gated-feedback")
     }
-    if !["accessibilitySelectedText", "unicodeKeyboardEvents"].contains(response.insertRoute ?? "") {
+    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(response.insertRoute ?? "") {
         failureReasons.append("unexpected-insert-route")
     }
     if response.insertSource != "transcription" {

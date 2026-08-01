@@ -1,6 +1,7 @@
 #!/usr/bin/env swift
 
 import AppKit
+import ApplicationServices
 import Foundation
 
 struct Options {
@@ -495,6 +496,14 @@ func stopProduct(repoRoot: String, productAppPath: String, runtimeDir: String) {
     )
 }
 
+func cleanupRunningProductProcesses() {
+    let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite")
+    for application in applications {
+        application.terminate()
+    }
+    Thread.sleep(forTimeInterval: 0.5)
+}
+
 func waitUntil(timeoutSeconds: Double, pollIntervalSeconds: Double = 0.1, condition: () throws -> Bool) throws {
     let deadline = Date().addingTimeInterval(timeoutSeconds)
     while Date() < deadline {
@@ -631,23 +640,30 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
           return URL of current tab of front window
         end tell
         """)
-        return currentURL == fixtureURL.absoluteString
+        return currentURL.split(separator: "#", maxSplits: 1).first.map(String.init) == fixtureURL.absoluteString
     }
     Thread.sleep(forTimeInterval: 0.5)
 }
 
 func readSafariTextareaValue() throws -> String {
-    let currentURL = try readAppleScriptString("""
-    tell application "Safari"
-      return URL of current tab of front window
-    end tell
-    """)
-
-    guard let components = URLComponents(string: currentURL) else {
-        return ""
+    guard let safari = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Safari").first else {
+        throw ValidationError.controlFailed("Safari is not running.")
     }
-
-    return components.percentEncodedFragment?.removingPercentEncoding ?? ""
+    let appElement = AXUIElementCreateApplication(safari.processIdentifier)
+    var focusedValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        appElement,
+        kAXFocusedUIElementAttribute as CFString,
+        &focusedValue
+    ) == .success, let focusedValue else {
+        throw ValidationError.controlFailed("Could not read Safari's focused element.")
+    }
+    let focusedElement = focusedValue as! AXUIElement
+    var textValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(focusedElement, kAXValueAttribute as CFString, &textValue) == .success else {
+        throw ValidationError.controlFailed("Could not read Safari's focused textarea value.")
+    }
+    return textValue as? String ?? ""
 }
 
 func safariActiveElementID() throws -> String {
@@ -775,7 +791,7 @@ func runContextSeries(
             reasons.append("unexpected-kind-\(productResponse.kind)")
         }
 
-        if !["accessibilitySelectedText", "unicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
+        if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
             reasons.append("unexpected-insert-route")
         }
 
@@ -909,7 +925,7 @@ func runClipboardRestoreProbe(
     if productResponse.kind != "insertTranscription" {
         failures.append("unexpected-kind-\(productResponse.kind)")
     }
-    if !["accessibilitySelectedText", "unicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
+    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
         failures.append("unexpected-insert-route")
     }
     if productResponse.insertSource != "transcription" {
@@ -968,6 +984,7 @@ do {
     if options.skipLaunch {
         launchState = try readLaunchState(runtimeDir: options.productRuntimeDir)
     } else {
+        cleanupRunningProductProcesses()
         try? FileManager.default.removeItem(atPath: options.productRuntimeDir)
         launchState = try launchProduct(
             repoRoot: repoRoot,
@@ -1207,4 +1224,13 @@ printContextSummary(summary.textEdit)
 printContextSummary(summary.safari)
 for clipboard in summary.clipboardRestore {
     print("[002D] clipboard=\(clipboard.name) success=\(clipboard.success) insertedTextMatches=\(clipboard.insertedTextMatches) error=\(clipboard.error ?? "none")")
+}
+
+let allContextsPassed = [summary.textEdit, summary.safari].allSatisfy {
+    $0.successCount == $0.runCount && $0.failureReasons.isEmpty
+}
+let allClipboardProbesPassed = summary.clipboardRestore.allSatisfy(\.success)
+if !allContextsPassed || !allClipboardProbesPassed {
+    fputs("Product compatibility validation failed.\n", stderr)
+    exit(1)
 }

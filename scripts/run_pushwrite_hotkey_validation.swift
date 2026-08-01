@@ -709,7 +709,7 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
     let fixtureURLString = escapeAppleScriptString(fixtureURL.absoluteString)
     do {
         try waitUntil(timeoutSeconds: 30) {
-            try currentSafariURL() == fixtureURL.absoluteString
+            try currentSafariURL().split(separator: "#", maxSplits: 1).first.map(String.init) == fixtureURL.absoluteString
         }
     } catch {
         let script = """
@@ -724,7 +724,7 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
         _ = try runAppleScript(script)
 
         try waitUntil(timeoutSeconds: 20) {
-            try currentSafariURL() == fixtureURL.absoluteString
+            try currentSafariURL().split(separator: "#", maxSplits: 1).first.map(String.init) == fixtureURL.absoluteString
         }
     }
 
@@ -736,17 +736,24 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
 }
 
 func readSafariTextareaValue() throws -> String {
-    let currentURL = try readAppleScriptString("""
-    tell application "Safari"
-      return URL of current tab of front window
-    end tell
-    """)
-
-    guard let components = URLComponents(string: currentURL) else {
-        return ""
+    guard let safari = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Safari").first else {
+        throw ValidationError.controlFailed("Safari is not running.")
     }
-
-    return components.percentEncodedFragment?.removingPercentEncoding ?? ""
+    let appElement = AXUIElementCreateApplication(safari.processIdentifier)
+    var focusedValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        appElement,
+        kAXFocusedUIElementAttribute as CFString,
+        &focusedValue
+    ) == .success, let focusedValue else {
+        throw ValidationError.controlFailed("Could not read Safari's focused element.")
+    }
+    let focusedElement = focusedValue as! AXUIElement
+    var textValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(focusedElement, kAXValueAttribute as CFString, &textValue) == .success else {
+        throw ValidationError.controlFailed("Could not read Safari's focused textarea value.")
+    }
+    return textValue as? String ?? ""
 }
 
 func safariFixtureReady() throws -> Bool {
@@ -903,7 +910,7 @@ func runHotKeySeries(
         if hotKeyResponse.kind != "insertTranscription" {
             reasons.append("unexpected-kind-\(hotKeyResponse.kind)")
         }
-        if !["accessibilitySelectedText", "unicodeKeyboardEvents"].contains(hotKeyResponse.insertRoute ?? "") {
+        if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(hotKeyResponse.insertRoute ?? "") {
             reasons.append("unexpected-insert-route")
         }
         if hotKeyResponse.insertSource != "transcription" {

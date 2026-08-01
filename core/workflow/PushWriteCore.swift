@@ -106,7 +106,16 @@ enum InsertionTargetDecision: Equatable {
 }
 
 enum InsertionTargetPolicy {
-    static func evaluate(protectedContent: Bool, editable: Bool?) -> InsertionTargetDecision {
+    private static let keyboardEditableRoles: Set<String> = [
+        "AXTextArea",
+        "AXTextField",
+        "AXComboBox",
+    ]
+
+    static func evaluate(
+        protectedContent: Bool,
+        editable: Bool?
+    ) -> InsertionTargetDecision {
         if protectedContent {
             return .rejectProtected
         }
@@ -114,5 +123,9 @@ enum InsertionTargetPolicy {
             return .rejectNonEditable
         }
         return .allow
+    }
+
+    static func allowsUnicodeKeyboardFallback(editable: Bool?, role: String?) -> Bool {
+        editable == true || keyboardEditableRoles.contains(role ?? "")
     }
 }

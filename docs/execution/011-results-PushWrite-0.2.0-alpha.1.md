@@ -15,7 +15,7 @@ Stand: 2026-08-01
 
 ## B. Umsetzung
 
-Die App ist eine native AppKit-Menu-Bar-Anwendung. Carbon registriert den globalen Press-and-hold-Hotkey. AVFoundation zeichnet 16-kHz-Mono-WAV auf; der gebündelte statische `whisper-cli` transkribiert lokal. ApplicationServices prüft Fokus, Feldrolle, Editierbarkeit, Secure-Status und Ziel-PID. Text wird primär über `kAXSelectedTextAttribute`, ersatzweise über Unicode-CGEvents eingesetzt. Der produktive Pfad schreibt keinen Nutztext in `NSPasteboard.general`.
+Die App ist eine native AppKit-Menu-Bar-Anwendung. Carbon registriert den globalen Press-and-hold-Hotkey. AVFoundation zeichnet 16-kHz-Mono-WAV auf; der gebündelte statische `whisper-cli` transkribiert lokal. ApplicationServices prüft Fokus, Feldrolle, Editierbarkeit, Secure-Status und Ziel-PID. Text wird primär über `kAXSelectedTextAttribute`, bei geeigneten Textrollen ersatzweise über eine verifizierte AX-Wertersetzung oder Unicode-CGEvents eingesetzt. Eine Route gilt nur als erfolgreich, wenn der tatsächliche Zielwert der erwarteten Einfügung entspricht. Der produktive Pfad schreibt keinen Nutztext in `NSPasteboard.general`.
 
 Whisper-CLI und Tiny-Modell liegen im App-Bundle. Das Modell wird vor Inferenz auf Grösse und SHA-256 geprüft. Die App besitzt Timeouts, räumt temporäre Artefakte auf und redigiert sensible JSON-Felder. Native Fenster decken Einstellungen, Berechtigungen und About ab; die Übersetzungsoption ist sichtbar als lokal, aber nicht verfügbar gekennzeichnet.
 
@@ -26,6 +26,7 @@ Automatisiert bestanden:
 - Core-Unit-Tests: 6/6.
 - Aufnahme-/Berechtigungsmatrix: 8/8.
 - Transkription/Einfügung: normaler Erfolg, leeres Transkript, zu kurzes Transkript, Accessibility-Block und fehlendes Modell.
+- Anwendungs-Kompatibilität: TextEdit 5/5 und Safari 5/5 mit verifiziertem Zielwert; Plain-Text- und Rich-Text-Clipboard jeweils unverändert.
 - Bundle-, Signatur-, Modell-, Abhängigkeits- und DMG-Prüfungen.
 
 Real bestanden:
@@ -44,9 +45,9 @@ Der Standardscan fand keine verbleibende reportable Schwachstelle im ausgeliefer
 
 ## E. Artefakte
 
-- App: `build/releases/PushWrite-0.2.0-alpha.1/PushWrite.app`, CDHash `b0319764ca8f93b537c1f10356b6fca086e8e9ba`
-- DMG: `build/releases/PushWrite-0.2.0-alpha.1/PushWrite-0.2.0-alpha.1-macos-arm64.dmg`, SHA-256 `84939ecd87ef91cd1c5299f1cc6e1e2007a800fc314fe25d1c2ee8c1f251526e`
-- ZIP: `build/releases/PushWrite-0.2.0-alpha.1/PushWrite-0.2.0-alpha.1-macos-arm64.zip`, SHA-256 `2d7da771bb4268fa8b9be3ab633278d3a2c2528ba9fe45e898fa67cd388843fd`
+- App: `build/releases/PushWrite-0.2.0-alpha.1/PushWrite.app`, CDHash `f55b190ec8c621b860b9e76578d76f7b87e17bb2`
+- DMG: `build/releases/PushWrite-0.2.0-alpha.1/PushWrite-0.2.0-alpha.1-macos-arm64.dmg`, SHA-256 `ddb5afac33f617ff0d48f2fedb7f0178404005521e93680ad7d3bc6c4f0508d8`
+- ZIP: `build/releases/PushWrite-0.2.0-alpha.1/PushWrite-0.2.0-alpha.1-macos-arm64.zip`, SHA-256 `2281b52e34c50dc05513c598d984e4755db72ffe6c9c2ea4a1ed8406f1284d99`
 - Icon: `app/macos/PushWrite/Assets/PushWrite.icns`, SHA-256 `0c01b07d3fa297cd25287fe908967e4f920a76a8b9896a3f218aace7b7c22211`
 - Whisper-Modell: `models/ggml-tiny.bin`, SHA-256 `be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21`
 - Übersetzungsmodelle: nicht ausgeliefert; geprüfte temporäre Binärdateien sind in `docs/architecture/local-translation.md` dokumentiert
@@ -61,4 +62,6 @@ Developer-ID-Zertifikat und Notarisierungsprofil fehlen lokal. Dies ist extern, 
 
 ## G. Endurteil
 
-`READY FOR ALPHA TEST AFTER SIGNING`
+`READY FOR INTERNAL ALPHA TEST`
+
+Externe Verteilung bleibt bis Developer-ID-Signierung und Notarisierung gesperrt.

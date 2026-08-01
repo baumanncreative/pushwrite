@@ -24,6 +24,7 @@ enum ProductResponseStatus: String, Codable {
 
 enum InsertRoute: String, Codable {
     case accessibilitySelectedText
+    case accessibilityValueReplacement
     case unicodeKeyboardEvents
     case pasteboardCommandV
 }
@@ -1197,7 +1198,40 @@ func validateInsertionTarget(_ focus: FocusSnapshot?) throws {
     }
 }
 
-func insertWithAccessibilitySelectedText(_ text: String, appPID: pid_t) -> Bool {
+func copySelectedTextRange(from element: AXUIElement) -> CFRange? {
+    var rangeValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        element,
+        kAXSelectedTextRangeAttribute as CFString,
+        &rangeValue
+    ) == .success, let rangeValue, CFGetTypeID(rangeValue) == AXValueGetTypeID() else {
+        return nil
+    }
+    let axValue = unsafeBitCast(rangeValue, to: AXValue.self)
+    guard AXValueGetType(axValue) == .cfRange else {
+        return nil
+    }
+    var range = CFRange()
+    return AXValueGetValue(axValue, .cfRange, &range) ? range : nil
+}
+
+func setSelectedTextRange(_ range: CFRange, on element: AXUIElement) {
+    var mutableRange = range
+    guard let rangeValue = AXValueCreate(.cfRange, &mutableRange) else {
+        return
+    }
+    AXUIElementSetAttributeValue(
+        element,
+        kAXSelectedTextRangeAttribute as CFString,
+        rangeValue
+    )
+}
+
+func insertWithAccessibility(
+    _ text: String,
+    appPID: pid_t,
+    allowValueReplacement: Bool
+) -> InsertRoute? {
     let appElement = AXUIElementCreateApplication(appPID)
     var focusedValue: CFTypeRef?
     guard AXUIElementCopyAttributeValue(
@@ -1205,25 +1239,94 @@ func insertWithAccessibilitySelectedText(_ text: String, appPID: pid_t) -> Bool 
         kAXFocusedUIElementAttribute as CFString,
         &focusedValue
     ) == .success, let focusedValue else {
-        return false
+        return nil
     }
     let focusedElement = unsafeBitCast(focusedValue, to: AXUIElement.self)
-    var settable = DarwinBoolean(false)
+    let valueBefore = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement)
+    let selectedRange = copySelectedTextRange(from: focusedElement)
+    let expectedValue: String?
+    if let valueBefore, let selectedRange,
+       selectedRange.location >= 0, selectedRange.length >= 0,
+       selectedRange.location + selectedRange.length <= (valueBefore as NSString).length {
+        expectedValue = (valueBefore as NSString).replacingCharacters(
+            in: NSRange(location: selectedRange.location, length: selectedRange.length),
+            with: text
+        )
+    } else {
+        expectedValue = nil
+    }
+
+    var selectedTextSettable = DarwinBoolean(false)
+    if AXUIElementIsAttributeSettable(
+        focusedElement,
+        kAXSelectedTextAttribute as CFString,
+        &selectedTextSettable
+    ) == .success, selectedTextSettable.boolValue,
+       AXUIElementSetAttributeValue(
+           focusedElement,
+           kAXSelectedTextAttribute as CFString,
+           text as CFTypeRef
+       ) == .success {
+        usleep(30_000)
+        let valueAfter = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement)
+        if let expectedValue, valueAfter == expectedValue {
+            return .accessibilitySelectedText
+        }
+        if expectedValue == nil, valueBefore != nil, valueAfter != valueBefore {
+            return .accessibilitySelectedText
+        }
+    }
+
+    guard allowValueReplacement, let expectedValue, let selectedRange else {
+        return nil
+    }
+    var valueSettable = DarwinBoolean(false)
     guard AXUIElementIsAttributeSettable(
         focusedElement,
-        kAXSelectedTextAttribute as CFString,
-        &settable
-    ) == .success, settable.boolValue else {
-        return false
+        kAXValueAttribute as CFString,
+        &valueSettable
+    ) == .success, valueSettable.boolValue,
+       AXUIElementSetAttributeValue(
+           focusedElement,
+           kAXValueAttribute as CFString,
+           expectedValue as CFTypeRef
+       ) == .success else {
+        return nil
     }
-    return AXUIElementSetAttributeValue(
-        focusedElement,
-        kAXSelectedTextAttribute as CFString,
-        text as CFTypeRef
-    ) == .success
+    usleep(30_000)
+    guard copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement) == expectedValue else {
+        return nil
+    }
+    setSelectedTextRange(
+        CFRange(location: selectedRange.location + text.utf16.count, length: 0),
+        on: focusedElement
+    )
+    return .accessibilityValueReplacement
 }
 
-func insertWithUnicodeKeyboardEvents(_ text: String) throws {
+func insertWithUnicodeKeyboardEvents(_ text: String, appPID: pid_t) throws {
+    let appElement = AXUIElementCreateApplication(appPID)
+    var focusedValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        appElement,
+        kAXFocusedUIElementAttribute as CFString,
+        &focusedValue
+    ) == .success, let focusedValue else {
+        throw ProductRuntimeError.textInsertionFailed("The focused target could not be verified.")
+    }
+    let focusedElementBefore = unsafeBitCast(focusedValue, to: AXUIElement.self)
+    guard let valueBefore = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElementBefore),
+          let selectedRange = copySelectedTextRange(from: focusedElementBefore),
+          selectedRange.location >= 0,
+          selectedRange.length >= 0,
+          selectedRange.location + selectedRange.length <= (valueBefore as NSString).length else {
+        throw ProductRuntimeError.textInsertionFailed("The focused target value could not be verified.")
+    }
+    let expectedValue = (valueBefore as NSString).replacingCharacters(
+        in: NSRange(location: selectedRange.location, length: selectedRange.length),
+        with: text
+    )
+
     guard let source = CGEventSource(stateID: .combinedSessionState) else {
         throw ProductRuntimeError.eventSourceUnavailable
     }
@@ -1245,6 +1348,21 @@ func insertWithUnicodeKeyboardEvents(_ text: String) throws {
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
     }
+
+    usleep(30_000)
+    var focusedValueAfter: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        appElement,
+        kAXFocusedUIElementAttribute as CFString,
+        &focusedValueAfter
+    ) == .success, let focusedValueAfter else {
+        throw ProductRuntimeError.textInsertionFailed("The focused target changed during insertion.")
+    }
+    let focusedElementAfter = unsafeBitCast(focusedValueAfter, to: AXUIElement.self)
+    guard CFEqual(focusedElementBefore, focusedElementAfter),
+          copyStringAttribute(kAXValueAttribute as CFString, from: focusedElementAfter) == expectedValue else {
+        throw ProductRuntimeError.textInsertionFailed("The inserted text could not be verified in the focused target.")
+    }
 }
 
 func insertTextWithoutPasteboard(_ text: String, focus: FocusSnapshot?) throws -> InsertRoute {
@@ -1252,10 +1370,21 @@ func insertTextWithoutPasteboard(_ text: String, focus: FocusSnapshot?) throws -
     guard let pid = focus?.app?.pid else {
         throw ProductRuntimeError.textInsertionFailed("The target application could not be identified.")
     }
-    if insertWithAccessibilitySelectedText(text, appPID: pid) {
-        return .accessibilitySelectedText
+    let allowsFallback = InsertionTargetPolicy.allowsUnicodeKeyboardFallback(
+        editable: focus?.editable,
+        role: focus?.role
+    )
+    if let route = insertWithAccessibility(
+        text,
+        appPID: pid,
+        allowValueReplacement: allowsFallback
+    ) {
+        return route
     }
-    try insertWithUnicodeKeyboardEvents(text)
+    guard allowsFallback else {
+        throw ProductRuntimeError.nonEditableTarget
+    }
+    try insertWithUnicodeKeyboardEvents(text, appPID: pid)
     return .unicodeKeyboardEvents
 }
 
@@ -2864,16 +2993,33 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             throw ProductRuntimeError.transcriptionLaunchFailed("\(error)")
         }
 
+        stdoutPipe.fileHandleForWriting.closeFile()
+        stderrPipe.fileHandleForWriting.closeFile()
+        let pipeDrainGroup = DispatchGroup()
+        pipeDrainGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            _ = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            pipeDrainGroup.leave()
+        }
+        pipeDrainGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            _ = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            pipeDrainGroup.leave()
+        }
+
         let completion = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in completion.signal() }
         if completion.wait(timeout: .now() + 120) == .timedOut {
             process.terminate()
-            _ = completion.wait(timeout: .now() + 5)
+            if completion.wait(timeout: .now() + 5) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                _ = completion.wait(timeout: .now() + 2)
+            }
+            _ = pipeDrainGroup.wait(timeout: .now() + 2)
             throw ProductRuntimeError.transcriptionProcessFailed("inference exceeded the 120-second limit")
         }
 
-        _ = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        _ = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        _ = pipeDrainGroup.wait(timeout: .now() + 2)
 
         guard process.terminationStatus == 0 else {
             throw ProductRuntimeError.transcriptionProcessFailed("exit status \(process.terminationStatus)")

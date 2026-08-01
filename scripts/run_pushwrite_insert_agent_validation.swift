@@ -1,6 +1,7 @@
 #!/usr/bin/env swift
 
 import AppKit
+import ApplicationServices
 import Foundation
 
 struct Options {
@@ -507,23 +508,30 @@ func ensureSafariFixtureReady(fixtureURL: URL) throws {
           return URL of current tab of front window
         end tell
         """)
-        return currentURL == fixtureURL.absoluteString
+        return currentURL.split(separator: "#", maxSplits: 1).first.map(String.init) == fixtureURL.absoluteString
     }
     Thread.sleep(forTimeInterval: 0.5)
 }
 
 func readSafariTextareaValue() throws -> String {
-    let currentURL = try readAppleScriptString("""
-    tell application id "com.apple.Safari"
-      return URL of current tab of front window
-    end tell
-    """)
-
-    guard let components = URLComponents(string: currentURL) else {
-        return ""
+    guard let safari = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Safari").first else {
+        throw ValidationError.controlFailed("Safari is not running.")
     }
-
-    return components.percentEncodedFragment?.removingPercentEncoding ?? ""
+    let appElement = AXUIElementCreateApplication(safari.processIdentifier)
+    var focusedValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        appElement,
+        kAXFocusedUIElementAttribute as CFString,
+        &focusedValue
+    ) == .success, let focusedValue else {
+        throw ValidationError.controlFailed("Could not read Safari's focused element.")
+    }
+    let focusedElement = focusedValue as! AXUIElement
+    var textValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(focusedElement, kAXValueAttribute as CFString, &textValue) == .success else {
+        throw ValidationError.controlFailed("Could not read Safari's focused textarea value.")
+    }
+    return textValue as? String ?? ""
 }
 
 func safariActiveElementID() throws -> String {

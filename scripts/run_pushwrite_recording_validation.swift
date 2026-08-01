@@ -555,9 +555,8 @@ func stopProduct(repoRoot: String, productAppPath: String, runtimeDir: String) {
 }
 
 func cleanupRunningProductProcesses(productAppPath: String) {
-    let executablePath = "\(productAppPath)/Contents/MacOS/PushWrite"
+    _ = productAppPath
     let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite")
-        .filter { $0.executableURL?.path == executablePath }
     for application in applications {
         application.terminate()
     }

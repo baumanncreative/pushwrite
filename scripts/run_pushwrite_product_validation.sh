@@ -17,6 +17,7 @@ swiftc \
   -sdk "$SDK_PATH" \
   -target arm64-apple-macos13.0 \
   -framework AppKit \
+  -framework ApplicationServices \
   "$SOURCE_FILE" \
   -o "$TOOL_PATH"
 
