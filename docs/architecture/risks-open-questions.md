@@ -1,4 +1,6 @@
-# Risks and Open Questions
+# Risks and open questions
+
+> Release-specific decisions and residual risks are maintained in the [0.2.0-alpha.1 security review](../security/0.2.0-alpha.1-security-review.md), [translation evaluation](local-translation.md) and [test report](../testing/0.2.0-alpha.1-test-matrix.md). Items below are historical unless repeated there.
 
 ## Zweck dieses Dokuments
 

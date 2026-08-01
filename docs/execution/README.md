@@ -35,10 +35,9 @@ Produkt-, Architektur- und Risikoentscheidungen werden in den jeweils dafür vor
 
 ## Aktuelle Aufträge
 
-- `001-architecture-validation-plan.md`
-- `002-text-insertion-macos.md`
-- `003-permissions-start-flow-macos.md`
-- `004-hotkey-recording-flow.md`
+- `001` bis `010`: abgeschlossene historische Architektur-, Integrations- und Release-Vorarbeiten mit jeweils zugehörigen Ergebnisdateien
+- `011-PushWrite-0.2.0-alpha.1.md`: verbindlicher Auftrag für die vollständige Alpha
+- `011-results-PushWrite-0.2.0-alpha.1.md`: tatsächlicher Abschluss-, Test- und Artefaktbericht
 
 ## Arbeitsregel
 

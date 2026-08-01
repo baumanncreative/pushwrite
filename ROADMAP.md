@@ -1,32 +1,25 @@
 # Roadmap
 
-PushWrite is developed in narrow, sequential increments. The current focus is a macOS-only MVP built around local Whisper transcription.
+## 0.2.0-alpha.1 — current
 
-## v0.1.0 Core MVP
+- ARM64 macOS 13+ menu-bar Alpha
+- local push-to-talk recording and multilingual Whisper transcription
+- direct pasteboard-free text insertion
+- explicit permission and error recovery flows
+- reproducible ad-hoc DMG/ZIP packaging
+- disabled, technically prepared local-translation settings surface
 
-- Global hotkey for push-to-talk
-- Microphone capture on macOS
-- Local transcription with Whisper
-- Direct text insertion at the current cursor position
-- Minimal settings required for the core workflow
+## Next Alpha
 
-## v0.2.0 Stability
+- obtain Developer ID Application credentials, notarize and staple the release
+- validate first installation on a clean macOS 13 user account
+- expand the real app matrix and repeated-use soak coverage
+- decide whether to bundle a native local translation runtime only after model licensing, binary packaging, latency and quality gates pass
+- avoid per-request Whisper process/model startup if measured latency requires an in-process runtime
 
-- Reliability improvements across hotkey, audio, and insertion flow
-- Better error handling and recovery paths
-- Latency and performance improvements
-- Expanded automated coverage for core behaviors
+## Later, not scheduled
 
-## v0.3.0 Usability
-
-- Clearer recording and transcription feedback
-- First-run and settings usability improvements
-- Better visibility into failure states
-- Accessibility-focused refinements for the macOS experience
-
-## Future Not Scheduled
-
-- Windows
-- Linux
-- mobile apps
-- file transcription
+- Intel macOS artifact after explicit build and hardware validation
+- configurable global hotkey
+- Windows, Linux and mobile platforms
+- file transcription, history, cloud sync, rewriting and cloud inference

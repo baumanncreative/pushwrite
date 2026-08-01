@@ -1,128 +1,70 @@
 # PushWrite
 
-**Local voice input for macOS**  
-*Powered by Whisper*
+**Local voice input for macOS — Powered by Whisper**
 
-PushWrite is a local, offline-capable voice input tool for macOS.
+PushWrite `0.2.0-alpha.1` is a native menu-bar app for local push-to-talk dictation on Apple-Silicon Macs. Hold `Control + Option + Command + P`, speak, then release: PushWrite records locally, transcribes with the bundled `whisper.cpp` runtime and inserts the text into the focused editable field without placing transcript text on the general pasteboard.
 
-Its purpose is narrow and practical: hold a global push-to-talk hotkey, speak into the microphone, transcribe speech locally, and insert the resulting text directly at the current cursor position.
+## Alpha status
 
-## Status
+Implemented:
 
-PushWrite is in early development.
+- global press-and-hold hotkey
+- local microphone recording and local `whisper.cpp` transcription
+- multilingual `ggml-tiny` model with runtime SHA-256 verification
+- direct Accessibility insertion with Unicode keyboard-event fallback
+- protected-field, missing-focus and target-change guards
+- native menu-bar states, settings, permission guidance and app icon
+- automatic cleanup of audio and transcript work files
+- offline-capable self-contained ARM64 app bundle
 
-This repository currently defines the product scope, technical direction, architecture decisions, and execution briefs for the MVP. The full macOS application is not implemented yet.
+The optional clipboard translation UI is intentionally disabled. A fully local German↔English engine was evaluated, but its current runtime/model packaging and model-license evidence do not yet meet this release's integration gate. PushWrite does not monitor the clipboard and contains no cloud fallback.
 
-## Product Focus
+## Requirements
 
-PushWrite is intentionally built around one primary workflow:
+- Apple Silicon (`arm64`)
+- macOS 13.0 or newer
+- microphone permission
+- Accessibility permission for insertion into other apps
 
-1. Press and hold a global hotkey
-2. Speak into the microphone
-3. Release the hotkey to stop recording
-4. Transcribe the audio locally
-5. Insert the recognized text directly at the active cursor position
+Intel Macs are not part of this Alpha because no `x86_64` runtime artifact was built or tested.
 
-The project is deliberately narrow in scope.
+## Privacy
 
-Current product focus:
+The production path contains no network client or telemetry. Audio, model inference and insertion remain local. The transcript is never staged on `NSPasteboard.general`; Apple documents that the general pasteboard automatically participates in Universal Clipboard, so avoiding it is required for PushWrite's local-only guarantee. Normal logs redact text values. Temporary audio and transcript artifacts are deleted when a flow completes or the app exits.
 
-- Single product: PushWrite
-- Active platform: macOS only
-- Core interaction: push-to-talk voice input
-- Local transcription as the default path
-- Direct text insertion as part of the product core
-- No cloud-dependent MVP path
-- No premature expansion into broader transcription workflows
+See [runtime architecture](docs/architecture/runtime-0.2.0-alpha.1.md), [permission model](docs/architecture/permission-model.md), [translation evaluation](docs/architecture/local-translation.md) and [security review](docs/security/0.2.0-alpha.1-security-review.md).
 
-## MVP Scope (v0.1.0)
+## Build and test
 
-Version `0.1.0` is the first deliberately constrained product increment.
+```sh
+PUSHWRITE_SDK_PATH=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+  ./scripts/build_whispercpp_minimal.sh
 
-Included in scope:
+PUSHWRITE_SDK_PATH=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+  ./scripts/build_pushwrite_product.sh /tmp/pushwrite-product
 
-- global push-to-talk hotkey
-- microphone recording on macOS
-- local speech-to-text transcription
-- direct insertion at the active cursor position
-- only the minimal settings required for the core workflow
+PUSHWRITE_SDK_PATH=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk \
+  ./scripts/run_pushwrite_unit_tests.sh
+```
 
-Explicitly out of scope:
+The SDK override is only needed on machines whose active Command Line Tools SDK does not match the installed Swift compiler. Full instructions are in [docs/building.md](docs/building.md).
 
-- file transcription
-- MP3, MP4, audio, or video import
-- cloud transcription
-- Windows support
-- Linux support
-- iOS or Android versions
-- advanced editing features
-- prompt-based rewriting features
-- multi-engine transcription architecture
-- premature platform abstraction for hypothetical future releases
+## Install
 
-## Platform Decision
+Open the DMG, drag `PushWrite.app` to `/Applications`, start it, then grant the requested permissions. The published Alpha artifact is ad-hoc signed until a baumanncreative Developer ID Application certificate and notary profile are supplied. See [docs/installing.md](docs/installing.md).
 
-PushWrite currently targets **macOS only**.
-
-This is a deliberate product and architecture decision. The MVP is not being optimized for Windows, Linux, iOS, or Android. Future expansion is possible, but it is not a driver for the current implementation scope.  [oai_citation:3‡ROADMAP.md](sediment://file_000000005278720abe94b393f65f7bfa)
-
-## Whisper Basis
-
-PushWrite is based on the **OpenAI Whisper** model family.
-
-For the macOS MVP, the preferred inference runtime is **`whisper.cpp`**. This direction is based on the project’s current technical decision that a local, offline-capable, embeddable runtime is a better fit for a native macOS product than using the Python-first `openai/whisper` repository as the primary product runtime.  [oai_citation:4‡ANALYSE-whisper-vs-whisper-cpp-macos-mvp.md](sediment://file_00000000c37872469f9f2f33a0827004)
-
-Practical implication:
-
-- OpenAI Whisper remains the upstream model foundation
-- `whisper.cpp` is the preferred inference runtime for the MVP
-- the macOS application layer still has to solve product-specific behavior separately
-
-That macOS application layer includes, at minimum:
-
-- global hotkey handling
-- microphone control
-- permissions handling
-- app state and error flow
-- direct text insertion at the current cursor position
-
-These parts are not solved by Whisper itself.  [oai_citation:5‡ANALYSE-whisper-vs-whisper-cpp-macos-mvp.md](sediment://file_00000000c37872469f9f2f33a0827004)
-
-## Design Principles
-
-PushWrite follows these principles:
-
-- local first
-- offline-capable by default
-- product clarity over feature volume
-- stability over feature breadth
-- simple architecture over speculative abstraction
-- strict separation between inference concerns and macOS application concerns
-- MVP discipline over future-facing complexity
-
-## Repository Structure
-
-The repository is organized around product definition, architecture decisions, and execution briefs.
+## Repository layout
 
 ```text
-pushwrite/
-├─ README.md
-├─ LICENSE
-├─ CHANGELOG.md
-├─ CODE_OF_CONDUCT.md
-├─ CONTRIBUTING.md
-├─ ROADMAP.md
-└─ docs/
-   ├─ product/
-   │  ├─ project-overview.md
-   │  └─ mvp-definition.md
-   ├─ architecture/
-   │  ├─ technical-decisions.md
-   │  ├─ risks-open-questions.md
-   │  └─ system-components.md
-   └─ execution/
-      ├─ README.md
-      ├─ 001-architecture-validation-plan.md
-      ├─ 002-text-insertion-macos.md
-      ├─ 003-permissions-start-flow-macos.md
-      └─ 004-hotkey-recording-flow.md
+app/macos/PushWrite/       Native AppKit application and assets
+core/workflow/             Platform-independent workflow rules
+models/                    Bundled multilingual Whisper model
+scripts/                   Reproducible build, QA and release tools
+tests/unit/                Swift unit tests
+third_party/whisper.cpp/   Vendored whisper.cpp 1.8.1 source
+docs/                      Product, architecture, test and release evidence
+```
+
+## License
+
+PushWrite is licensed under MIT. Bundled third-party notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
