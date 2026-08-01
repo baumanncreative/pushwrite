@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CONTROL_SCRIPT="$ROOT_DIR/scripts/control_pushwrite_product.sh"
 HOTKEY_VALIDATION_SCRIPT="$ROOT_DIR/scripts/run_pushwrite_hotkey_validation.sh"
+TRANSCRIPTION_VALIDATION_SCRIPT="$ROOT_DIR/scripts/run_pushwrite_transcription_insert_validation.sh"
 INFO_PLIST="$ROOT_DIR/app/macos/PushWrite/Info.plist"
 
 usage() {
@@ -15,7 +16,6 @@ Options:
   --artifact-zip <path>     Path to release zip artifact (required)
   --install-root <path>     Install extraction root (default: /tmp/pushwrite-rc-install)
   --runtime-root <path>     Runtime/log root (default: /tmp/pushwrite-rc-validation)
-  --success-text <text>     Text used for success insert check
   --results-file <path>     Optional summary output file
   -h, --help                Show this help
 USAGE
@@ -24,7 +24,6 @@ USAGE
 ARTIFACT_ZIP=""
 INSTALL_ROOT="/tmp/pushwrite-rc-install"
 RUNTIME_ROOT="/tmp/pushwrite-rc-validation"
-SUCCESS_TEXT="PushWrite 008 RC install validation success."
 RESULTS_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -39,10 +38,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --runtime-root)
       RUNTIME_ROOT="$2"
-      shift 2
-      ;;
-    --success-text)
-      SUCCESS_TEXT="$2"
       shift 2
       ;;
     --results-file)
@@ -138,6 +133,16 @@ if [[ ! -f "$INSTALLED_WHISPER_MODEL_PATH" ]]; then
   echo "Missing bundled whisper model at $INSTALLED_WHISPER_MODEL_PATH" >&2
   exit 1
 fi
+if ! codesign --verify --deep --strict "$INSTALLED_APP_PATH"; then
+  echo "Extracted release application failed code-signature verification: $INSTALLED_APP_PATH" >&2
+  exit 1
+fi
+EXPECTED_MODEL_SHA256="$(awk 'NF { print $1; exit }' "$ROOT_DIR/app/macos/PushWrite/Assets/whisper-model.sha256")"
+INSTALLED_MODEL_SHA256="$(shasum -a 256 "$INSTALLED_WHISPER_MODEL_PATH" | awk '{print $1}')"
+if [[ -z "$EXPECTED_MODEL_SHA256" || "$INSTALLED_MODEL_SHA256" != "$EXPECTED_MODEL_SHA256" ]]; then
+  echo "Bundled whisper model checksum mismatch in extracted release application." >&2
+  exit 1
+fi
 
 LS_RUNTIME_DIR="$RUNTIME_ROOT/ls-probe"
 LS_RESULTS_FILE="$RUNTIME_ROOT/ls-probe-summary.json"
@@ -172,48 +177,65 @@ if [[ "$LS_STATE_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then
 fi
 
 SUCCESS_RUNTIME_DIR="$RUNTIME_ROOT/success"
-SUCCESS_RESPONSE_FILE="$SUCCESS_RUNTIME_DIR/validation-success-response.json"
+SUCCESS_RESPONSE_FILE="$RUNTIME_ROOT/validation-success-summary.json"
+SUCCESS_STDOUT_FILE="$RUNTIME_ROOT/validation-success-stdout.txt"
+SUCCESS_STDERR_FILE="$RUNTIME_ROOT/validation-success-stderr.txt"
 
-"$CONTROL_SCRIPT" \
-  launch \
-  --force-accessibility-trusted \
-  --force-microphone-permission-status granted \
-  --force-microphone-request-result granted \
-  --product-app "$INSTALLED_APP_PATH" \
-  --runtime-dir "$SUCCESS_RUNTIME_DIR" >/dev/null
+set +e
+"$TRANSCRIPTION_VALIDATION_SCRIPT" \
+  --scenario success \
+  --skip-build \
+  --product-app-path "$INSTALLED_APP_PATH" \
+  --success-runtime-dir "$SUCCESS_RUNTIME_DIR" \
+  --whisper-cli-path "$INSTALLED_WHISPER_CLI_PATH" \
+  --whisper-model-path "$INSTALLED_WHISPER_MODEL_PATH" \
+  --results-file "$SUCCESS_RESPONSE_FILE" >"$SUCCESS_STDOUT_FILE" 2>"$SUCCESS_STDERR_FILE"
+SUCCESS_EXIT_CODE=$?
+set -e
 
-wait_for_file "$SUCCESS_RUNTIME_DIR/product-state.json" 20
+if [[ "$SUCCESS_EXIT_CODE" -ne 0 || ! -f "$SUCCESS_RESPONSE_FILE" ]]; then
+  echo "Success validation failed for the extracted release application." >&2
+  cat "$SUCCESS_STDERR_FILE" >&2
+  exit 1
+fi
 
-"$CONTROL_SCRIPT" \
-  insert-transcription \
-  --text "$SUCCESS_TEXT" \
-  --timeout-ms 20000 \
-  --product-app "$INSTALLED_APP_PATH" \
-  --runtime-dir "$SUCCESS_RUNTIME_DIR" > "$SUCCESS_RESPONSE_FILE"
+SUCCESS_SCENARIO_PASSED="$(read_json_raw success "$SUCCESS_RESPONSE_FILE")"
+SUCCESS_STATUS="$(read_json_raw hotKeyResponse.status "$SUCCESS_RESPONSE_FILE")"
+SUCCESS_INSERT_ROUTE="$(read_json_raw hotKeyResponse.insertRoute "$SUCCESS_RESPONSE_FILE")"
+SUCCESS_INSERT_SOURCE="$(read_json_raw hotKeyResponse.insertSource "$SUCCESS_RESPONSE_FILE")"
+SUCCESS_SYNTHETIC_PASTE_POSTED="$(read_json_raw hotKeyResponse.syntheticPastePosted "$SUCCESS_RESPONSE_FILE")"
+SUCCESS_CLIPBOARD_RESTORED="$(read_json_raw hotKeyResponse.clipboardRestored "$SUCCESS_RESPONSE_FILE")"
+SUCCESS_OBSERVED_TEXT="$(read_json_raw observedText "$SUCCESS_RESPONSE_FILE")"
+SUCCESS_TRANSCRIPTION_TEXT="$(read_json_raw hotKeyResponse.transcriptionArtifact.text "$SUCCESS_RESPONSE_FILE")"
 
-SUCCESS_STATUS="$(read_json_raw status "$SUCCESS_RESPONSE_FILE")"
-SUCCESS_INSERT_ROUTE="$(read_json_raw insertRoute "$SUCCESS_RESPONSE_FILE")"
-SUCCESS_INSERT_SOURCE="$(read_json_raw insertSource "$SUCCESS_RESPONSE_FILE")"
-SUCCESS_SYNTHETIC_PASTE_POSTED="$(read_json_raw syntheticPastePosted "$SUCCESS_RESPONSE_FILE")"
-
+if [[ "$SUCCESS_SCENARIO_PASSED" != "true" ]]; then
+  echo "Success validation failed: the end-to-end scenario reported failure." >&2
+  exit 1
+fi
 if [[ "$SUCCESS_STATUS" != "succeeded" ]]; then
   echo "Success validation failed: expected status=succeeded but got '$SUCCESS_STATUS'" >&2
   exit 1
 fi
-if [[ "$SUCCESS_INSERT_ROUTE" != "pasteboardCommandV" ]]; then
-  echo "Success validation failed: expected insertRoute=pasteboardCommandV but got '$SUCCESS_INSERT_ROUTE'" >&2
+if [[ "$SUCCESS_INSERT_ROUTE" != "accessibilitySelectedText" && "$SUCCESS_INSERT_ROUTE" != "accessibilityValueReplacement" && "$SUCCESS_INSERT_ROUTE" != "unicodeKeyboardEvents" ]]; then
+  echo "Success validation failed: expected a pasteboard-free insert route but got '$SUCCESS_INSERT_ROUTE'" >&2
   exit 1
 fi
 if [[ "$SUCCESS_INSERT_SOURCE" != "transcription" ]]; then
   echo "Success validation failed: expected insertSource=transcription but got '$SUCCESS_INSERT_SOURCE'" >&2
   exit 1
 fi
-if [[ "$SUCCESS_SYNTHETIC_PASTE_POSTED" != "true" ]]; then
-  echo "Success validation failed: expected syntheticPastePosted=true but got '$SUCCESS_SYNTHETIC_PASTE_POSTED'" >&2
+if [[ "$SUCCESS_SYNTHETIC_PASTE_POSTED" != "false" ]]; then
+  echo "Success validation failed: expected syntheticPastePosted=false but got '$SUCCESS_SYNTHETIC_PASTE_POSTED'" >&2
   exit 1
 fi
-
-"$CONTROL_SCRIPT" stop --timeout-ms 5000 --product-app "$INSTALLED_APP_PATH" --runtime-dir "$SUCCESS_RUNTIME_DIR" >/dev/null || true
+if [[ "$SUCCESS_CLIPBOARD_RESTORED" != "true" ]]; then
+  echo "Success validation failed: expected clipboardRestored=true but got '$SUCCESS_CLIPBOARD_RESTORED'" >&2
+  exit 1
+fi
+if [[ -z "$SUCCESS_TRANSCRIPTION_TEXT" || "$SUCCESS_OBSERVED_TEXT" != "$SUCCESS_TRANSCRIPTION_TEXT" ]]; then
+  echo "Success validation failed: TextEdit content does not match the inserted transcription." >&2
+  exit 1
+fi
 
 BLOCKED_RUNTIME_DIR="$RUNTIME_ROOT/blocked"
 BLOCKED_RESPONSE_FILE="$BLOCKED_RUNTIME_DIR/validation-blocked-response.json"
@@ -234,14 +256,14 @@ wait_for_file "$BLOCKED_RUNTIME_DIR/product-state.json" 20
 
 BLOCKED_STATUS="$(read_json_raw status "$BLOCKED_RESPONSE_FILE")"
 BLOCKED_REASON="$(read_json_raw blockedReason "$BLOCKED_RESPONSE_FILE")"
+BLOCKED_ACCESSIBILITY_TRUSTED="$(read_json_raw accessibilityTrusted "$BLOCKED_RESPONSE_FILE")"
 
 if [[ "$BLOCKED_STATUS" != "blocked" ]]; then
   echo "Negative validation failed: expected status=blocked but got '$BLOCKED_STATUS'" >&2
   exit 1
 fi
-if [[ "$BLOCKED_REASON" != *"Accessibility access is required"* ]]; then
-  echo "Negative validation failed: blockedReason does not contain expected accessibility message." >&2
-  echo "blockedReason=$BLOCKED_REASON" >&2
+if [[ "$BLOCKED_ACCESSIBILITY_TRUSTED" != "false" || -z "$BLOCKED_REASON" ]]; then
+  echo "Negative validation failed: expected an untrusted accessibility state and a user-facing reason." >&2
   exit 1
 fi
 
@@ -269,13 +291,17 @@ launchservices_probe_stderr=$LS_STDERR_FILE
 launchservices_probe_results=$LS_RESULTS_FILE
 success_runtime_dir=$SUCCESS_RUNTIME_DIR
 success_response_file=$SUCCESS_RESPONSE_FILE
+success_exit_code=$SUCCESS_EXIT_CODE
 success_status=$SUCCESS_STATUS
 success_insert_route=$SUCCESS_INSERT_ROUTE
 success_insert_source=$SUCCESS_INSERT_SOURCE
 success_synthetic_paste_posted=$SUCCESS_SYNTHETIC_PASTE_POSTED
+success_clipboard_restored=$SUCCESS_CLIPBOARD_RESTORED
+success_observed_text_matches=true
 negative_runtime_dir=$BLOCKED_RUNTIME_DIR
 negative_response_file=$BLOCKED_RESPONSE_FILE
 negative_status=$BLOCKED_STATUS
+negative_accessibility_trusted=$BLOCKED_ACCESSIBILITY_TRUSTED
 negative_blocked_reason=$BLOCKED_REASON
 RESULTS
 fi
@@ -292,9 +318,13 @@ printf '%s\n' "launchservices_probe_exit_code=$LS_EXIT_CODE"
 printf '%s\n' "launchservices_probe_state_file=$LS_STATE_FILE"
 printf '%s\n' "success_runtime_dir=$SUCCESS_RUNTIME_DIR"
 printf '%s\n' "success_response_file=$SUCCESS_RESPONSE_FILE"
+printf '%s\n' "success_exit_code=$SUCCESS_EXIT_CODE"
 printf '%s\n' "success_status=$SUCCESS_STATUS"
 printf '%s\n' "success_insert_route=$SUCCESS_INSERT_ROUTE"
 printf '%s\n' "success_synthetic_paste_posted=$SUCCESS_SYNTHETIC_PASTE_POSTED"
+printf '%s\n' "success_clipboard_restored=$SUCCESS_CLIPBOARD_RESTORED"
+printf '%s\n' "success_observed_text_matches=true"
 printf '%s\n' "negative_runtime_dir=$BLOCKED_RUNTIME_DIR"
 printf '%s\n' "negative_response_file=$BLOCKED_RESPONSE_FILE"
 printf '%s\n' "negative_status=$BLOCKED_STATUS"
+printf '%s\n' "negative_accessibility_trusted=$BLOCKED_ACCESSIBILITY_TRUSTED"

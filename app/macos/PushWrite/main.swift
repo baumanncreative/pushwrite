@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import AVFoundation
 import Carbon
+import CryptoKit
 import Foundation
 
 enum ProductRequestKind: String, Codable {
@@ -22,6 +23,9 @@ enum ProductResponseStatus: String, Codable {
 }
 
 enum InsertRoute: String, Codable {
+    case accessibilitySelectedText
+    case accessibilityValueReplacement
+    case unicodeKeyboardEvents
     case pasteboardCommandV
 }
 
@@ -124,15 +128,8 @@ struct FocusSnapshot: Codable {
     let subrole: String?
     let title: String?
     let value: String?
-}
-
-struct PasteboardItemSnapshot {
-    let dataByType: [(NSPasteboard.PasteboardType, Data)]
-}
-
-struct PasteboardSnapshot {
-    let changeCount: Int
-    let items: [PasteboardItemSnapshot]
+    let editable: Bool?
+    let protectedContent: Bool
 }
 
 struct PasteboardMetadata: Codable {
@@ -293,8 +290,12 @@ func evaluateTranscriptionInsertGate(for result: TranscriptionResult) -> Transcr
     guard !text.isEmpty else {
         return .gated(reason: .emptyTranscriptionText)
     }
-    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedText.isEmpty else {
         return .gated(reason: .whitespaceOnlyTranscriptionText)
+    }
+    guard trimmedText.unicodeScalars.filter({ !$0.properties.isWhitespace }).count >= 2 else {
+        return .gated(reason: .tooShort)
     }
     return .passed(text: text)
 }
@@ -340,6 +341,8 @@ struct ResolvedWhisperRuntime {
     let cli: ResolvedWhisperPath
     let model: ResolvedWhisperPath
 }
+
+let bundledWhisperModelSHA256 = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
 
 struct TranscriptionResult: Codable {
     let id: String
@@ -521,8 +524,12 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
     case microphoneRecordingStartFailed
     case eventSourceUnavailable
     case eventCreationFailed
+    case protectedTextField
+    case nonEditableTarget
+    case textInsertionFailed(String)
     case missingWhisperCLI(String)
     case missingWhisperModel(String)
+    case invalidWhisperModel(String)
     case missingTranscriptionFixture(String)
     case failedToInspectRecording(String)
     case failedToReplaceRecordingArtifact(String)
@@ -543,7 +550,7 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
         case let .invalidRequest(message):
             return message
         case .accessibilityDenied:
-            return "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V."
+            return "PushWrite benötigt Zugriff auf Bedienungshilfen, um Text an der Einfügemarke einzusetzen."
         case .noMicrophoneDevice:
             return "No audio input device is available for PushWrite recording."
         case let .microphoneRecorderCreationFailed(message):
@@ -553,11 +560,19 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
         case .eventSourceUnavailable:
             return "Could not create a CGEventSource for keyboard events."
         case .eventCreationFailed:
-            return "Could not create one or more keyboard events for Cmd+V."
+            return "Could not create one or more keyboard events for text insertion."
+        case .protectedTextField:
+            return "PushWrite does not insert text into password or other protected fields."
+        case .nonEditableTarget:
+            return "The current target is not an editable text field."
+        case let .textInsertionFailed(message):
+            return "PushWrite could not insert text at the current cursor position: \(message)"
         case let .missingWhisperCLI(path):
             return "whisper.cpp CLI is missing at \(path)."
         case let .missingWhisperModel(path):
             return "whisper.cpp model is missing at \(path)."
+        case let .invalidWhisperModel(message):
+            return "The bundled whisper.cpp model failed its integrity check: \(message)"
         case let .missingTranscriptionFixture(path):
             return "Transcription fixture WAV is missing at \(path)."
         case let .failedToInspectRecording(message):
@@ -614,7 +629,9 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
     var simulatedTranscriptionText = defaultSimulatedTranscriptionText()
     var whisperCLIPath = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_CLI_PATH"]
     var whisperModelPath = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_MODEL_PATH"]
-    var whisperLanguage = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_LANGUAGE"] ?? "auto"
+    var whisperLanguage = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_LANGUAGE"]
+        ?? UserDefaults.standard.string(forKey: "transcriptionLanguage")
+        ?? "auto"
     var transcriptionFixtureWAVPath = ProcessInfo.processInfo.environment["PUSHWRITE_TRANSCRIPTION_FIXTURE_WAV"]
     var forceAccessibilityBlocked = accessibilityBlockedOverrideEnabled()
     var forceAccessibilityTrusted = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_TRUSTED"] == "1"
@@ -814,6 +831,16 @@ func repoFallbackWhisperModelPath() -> String {
 }
 
 func resolveWhisperCLIPath(launchOptions: LaunchOptions) throws -> ResolvedWhisperPath {
+    let explicitPath = launchOptions.whisperCLIPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_TEST_RUNTIME_OVERRIDE"] == "1",
+       let explicitPath,
+       !explicitPath.isEmpty {
+        guard FileManager.default.isExecutableFile(atPath: explicitPath) else {
+            throw ProductRuntimeError.missingWhisperCLI(explicitPath)
+        }
+        return ResolvedWhisperPath(path: explicitPath, source: .explicitOverride)
+    }
+
     let bundledPath = bundledWhisperCLIPath()
     if !bundledPath.isEmpty, FileManager.default.fileExists(atPath: bundledPath) {
         guard FileManager.default.isExecutableFile(atPath: bundledPath) else {
@@ -824,7 +851,6 @@ func resolveWhisperCLIPath(launchOptions: LaunchOptions) throws -> ResolvedWhisp
         return ResolvedWhisperPath(path: bundledPath, source: .bundledProductResource)
     }
 
-    let explicitPath = launchOptions.whisperCLIPath?.trimmingCharacters(in: .whitespacesAndNewlines)
     if let explicitPath, !explicitPath.isEmpty {
         guard FileManager.default.fileExists(atPath: explicitPath) else {
             throw ProductRuntimeError.missingWhisperCLI(explicitPath)
@@ -855,12 +881,21 @@ func resolveWhisperCLIPath(launchOptions: LaunchOptions) throws -> ResolvedWhisp
 }
 
 func resolveWhisperModelPath(launchOptions: LaunchOptions) throws -> ResolvedWhisperPath {
+    let explicitPath = launchOptions.whisperModelPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_TEST_RUNTIME_OVERRIDE"] == "1",
+       let explicitPath,
+       !explicitPath.isEmpty {
+        guard FileManager.default.fileExists(atPath: explicitPath) else {
+            throw ProductRuntimeError.missingWhisperModel(explicitPath)
+        }
+        return ResolvedWhisperPath(path: explicitPath, source: .explicitOverride)
+    }
+
     let bundledPath = bundledWhisperModelPath()
     if !bundledPath.isEmpty, FileManager.default.fileExists(atPath: bundledPath) {
         return ResolvedWhisperPath(path: bundledPath, source: .bundledProductResource)
     }
 
-    let explicitPath = launchOptions.whisperModelPath?.trimmingCharacters(in: .whitespacesAndNewlines)
     if let explicitPath, !explicitPath.isEmpty {
         guard FileManager.default.fileExists(atPath: explicitPath) else {
             throw ProductRuntimeError.missingWhisperModel(explicitPath)
@@ -883,7 +918,25 @@ func resolveWhisperModelPath(launchOptions: LaunchOptions) throws -> ResolvedWhi
 func resolveWhisperRuntime(launchOptions: LaunchOptions) throws -> ResolvedWhisperRuntime {
     let cli = try resolveWhisperCLIPath(launchOptions: launchOptions)
     let model = try resolveWhisperModelPath(launchOptions: launchOptions)
+    if model.source == .bundledProductResource {
+        try verifyBundledWhisperModel(at: model.path)
+    }
     return ResolvedWhisperRuntime(cli: cli, model: model)
+}
+
+func verifyBundledWhisperModel(at path: String) throws {
+    let url = URL(fileURLWithPath: path)
+    let attributes = try FileManager.default.attributesOfItem(atPath: path)
+    let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+    guard size == 77_691_713 else {
+        throw ProductRuntimeError.invalidWhisperModel("unexpected size \(size) bytes")
+    }
+
+    let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+    let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    guard digest == bundledWhisperModelSHA256 else {
+        throw ProductRuntimeError.invalidWhisperModel("SHA-256 mismatch")
+    }
 }
 
 func normalizedWhisperLanguage(_ language: String) -> String {
@@ -1007,12 +1060,15 @@ func hasAvailableMicrophoneDevice() -> Bool {
     if runtimeNoMicrophoneDeviceOverride || ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_NO_MICROPHONE_DEVICE"] == "1" {
         return false
     }
-    let discoverySession = AVCaptureDevice.DiscoverySession(
-        deviceTypes: [.microphone, .external],
-        mediaType: .audio,
-        position: .unspecified
-    )
-    return !discoverySession.devices.isEmpty
+    if #available(macOS 14.0, *) {
+        let discoverySession = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.microphone, .external],
+            mediaType: .audio,
+            position: .unspecified
+        )
+        return !discoverySession.devices.isEmpty
+    }
+    return AVCaptureDevice.default(for: .audio) != nil
 }
 
 func requestMicrophoneAccess(completion: @escaping (MicrophonePermissionStatus, Bool) -> Void) {
@@ -1070,6 +1126,15 @@ func copyStringAttribute(_ name: CFString, from element: AXUIElement) -> String?
     return value as? String
 }
 
+func copyBooleanAttribute(_ name: CFString, from element: AXUIElement) -> Bool? {
+    var value: CFTypeRef?
+    let result = AXUIElementCopyAttributeValue(element, name, &value)
+    guard result == .success, let number = value as? NSNumber else {
+        return nil
+    }
+    return number.boolValue
+}
+
 func copyFocusedElement(from app: NSRunningApplication) -> AXUIElement? {
     let appElement = AXUIElementCreateApplication(app.processIdentifier)
     var value: CFTypeRef?
@@ -1092,82 +1157,235 @@ func captureFocusSnapshot(isTrusted: Bool) -> FocusSnapshot? {
     )
 
     guard isTrusted, let focusedElement = copyFocusedElement(from: app) else {
-        return FocusSnapshot(app: appSnapshot, role: nil, subrole: nil, title: nil, value: nil)
+        return FocusSnapshot(
+            app: appSnapshot,
+            role: nil,
+            subrole: nil,
+            title: nil,
+            value: nil,
+            editable: nil,
+            protectedContent: false
+        )
     }
+
+    let subrole = copyStringAttribute(kAXSubroleAttribute as CFString, from: focusedElement)
+    let protectedContent = subrole == (kAXSecureTextFieldSubrole as String)
 
     return FocusSnapshot(
         app: appSnapshot,
         role: copyStringAttribute(kAXRoleAttribute as CFString, from: focusedElement),
-        subrole: copyStringAttribute(kAXSubroleAttribute as CFString, from: focusedElement),
+        subrole: subrole,
         title: copyStringAttribute(kAXTitleAttribute as CFString, from: focusedElement),
-        value: copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement)
+        value: nil,
+        editable: copyBooleanAttribute("AXEditable" as CFString, from: focusedElement),
+        protectedContent: protectedContent
     )
 }
 
-func snapshotGeneralPasteboard() -> PasteboardSnapshot {
-    let pasteboard = NSPasteboard.general
-    let items = pasteboard.pasteboardItems ?? []
-    let snapshotItems = items.map { item in
-        PasteboardItemSnapshot(
-            dataByType: item.types.compactMap { type in
-                guard let data = item.data(forType: type) else {
-                    return nil
-                }
-                return (type, data)
-            }
+func validateInsertionTarget(_ focus: FocusSnapshot?) throws {
+    guard let focus else {
+        throw ProductRuntimeError.textInsertionFailed("No focused target was available.")
+    }
+    let decision = InsertionTargetPolicy.evaluate(
+        protectedContent: focus.protectedContent || focus.subrole == (kAXSecureTextFieldSubrole as String),
+        editable: focus.editable
+    )
+    if decision == .rejectProtected {
+        throw ProductRuntimeError.protectedTextField
+    }
+    if decision == .rejectNonEditable {
+        throw ProductRuntimeError.nonEditableTarget
+    }
+}
+
+func copySelectedTextRange(from element: AXUIElement) -> CFRange? {
+    var rangeValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        element,
+        kAXSelectedTextRangeAttribute as CFString,
+        &rangeValue
+    ) == .success, let rangeValue, CFGetTypeID(rangeValue) == AXValueGetTypeID() else {
+        return nil
+    }
+    let axValue = unsafeBitCast(rangeValue, to: AXValue.self)
+    guard AXValueGetType(axValue) == .cfRange else {
+        return nil
+    }
+    var range = CFRange()
+    return AXValueGetValue(axValue, .cfRange, &range) ? range : nil
+}
+
+func setSelectedTextRange(_ range: CFRange, on element: AXUIElement) {
+    var mutableRange = range
+    guard let rangeValue = AXValueCreate(.cfRange, &mutableRange) else {
+        return
+    }
+    AXUIElementSetAttributeValue(
+        element,
+        kAXSelectedTextRangeAttribute as CFString,
+        rangeValue
+    )
+}
+
+func insertWithAccessibility(
+    _ text: String,
+    appPID: pid_t,
+    allowValueReplacement: Bool
+) -> InsertRoute? {
+    let appElement = AXUIElementCreateApplication(appPID)
+    var focusedValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        appElement,
+        kAXFocusedUIElementAttribute as CFString,
+        &focusedValue
+    ) == .success, let focusedValue else {
+        return nil
+    }
+    let focusedElement = unsafeBitCast(focusedValue, to: AXUIElement.self)
+    let valueBefore = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement)
+    let selectedRange = copySelectedTextRange(from: focusedElement)
+    let expectedValue: String?
+    if let valueBefore, let selectedRange,
+       selectedRange.location >= 0, selectedRange.length >= 0,
+       selectedRange.location + selectedRange.length <= (valueBefore as NSString).length {
+        expectedValue = (valueBefore as NSString).replacingCharacters(
+            in: NSRange(location: selectedRange.location, length: selectedRange.length),
+            with: text
         )
+    } else {
+        expectedValue = nil
     }
 
-    return PasteboardSnapshot(changeCount: pasteboard.changeCount, items: snapshotItems)
-}
-
-func restoreGeneralPasteboard(from snapshot: PasteboardSnapshot) {
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-
-    let restoredItems = snapshot.items.map { itemSnapshot in
-        let item = NSPasteboardItem()
-        for (type, data) in itemSnapshot.dataByType {
-            item.setData(data, forType: type)
+    var selectedTextSettable = DarwinBoolean(false)
+    if AXUIElementIsAttributeSettable(
+        focusedElement,
+        kAXSelectedTextAttribute as CFString,
+        &selectedTextSettable
+    ) == .success, selectedTextSettable.boolValue,
+       AXUIElementSetAttributeValue(
+           focusedElement,
+           kAXSelectedTextAttribute as CFString,
+           text as CFTypeRef
+       ) == .success {
+        usleep(30_000)
+        let valueAfter = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement)
+        if let expectedValue, valueAfter == expectedValue {
+            return .accessibilitySelectedText
         }
-        return item
+        if expectedValue == nil, valueBefore != nil, valueAfter != valueBefore {
+            return .accessibilitySelectedText
+        }
     }
 
-    if !restoredItems.isEmpty {
-        pasteboard.writeObjects(restoredItems)
+    guard allowValueReplacement, let expectedValue, let selectedRange else {
+        return nil
     }
+    var valueSettable = DarwinBoolean(false)
+    guard AXUIElementIsAttributeSettable(
+        focusedElement,
+        kAXValueAttribute as CFString,
+        &valueSettable
+    ) == .success, valueSettable.boolValue,
+       AXUIElementSetAttributeValue(
+           focusedElement,
+           kAXValueAttribute as CFString,
+           expectedValue as CFTypeRef
+       ) == .success else {
+        return nil
+    }
+    usleep(30_000)
+    guard copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement) == expectedValue else {
+        return nil
+    }
+    setSelectedTextRange(
+        CFRange(location: selectedRange.location + text.utf16.count, length: 0),
+        on: focusedElement
+    )
+    return .accessibilityValueReplacement
 }
 
-func writePlainTextToPasteboard(_ text: String) {
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    pasteboard.setString(text, forType: .string)
-}
-
-func postSyntheticPaste() throws {
-    if runtimeSyntheticPasteFailureOverride ||
-        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_SYNTHETIC_PASTE_FAILURE"] == "1" {
-        throw ProductRuntimeError.forcedSyntheticPasteFailure
+func insertWithUnicodeKeyboardEvents(_ text: String, appPID: pid_t) throws {
+    let appElement = AXUIElementCreateApplication(appPID)
+    var focusedValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        appElement,
+        kAXFocusedUIElementAttribute as CFString,
+        &focusedValue
+    ) == .success, let focusedValue else {
+        throw ProductRuntimeError.textInsertionFailed("The focused target could not be verified.")
     }
+    let focusedElementBefore = unsafeBitCast(focusedValue, to: AXUIElement.self)
+    guard let valueBefore = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElementBefore),
+          let selectedRange = copySelectedTextRange(from: focusedElementBefore),
+          selectedRange.location >= 0,
+          selectedRange.length >= 0,
+          selectedRange.location + selectedRange.length <= (valueBefore as NSString).length else {
+        throw ProductRuntimeError.textInsertionFailed("The focused target value could not be verified.")
+    }
+    let expectedValue = (valueBefore as NSString).replacingCharacters(
+        in: NSRange(location: selectedRange.location, length: selectedRange.length),
+        with: text
+    )
 
     guard let source = CGEventSource(stateID: .combinedSessionState) else {
         throw ProductRuntimeError.eventSourceUnavailable
     }
-
-    let keyCodeV: CGKeyCode = 9
-    guard
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCodeV, keyDown: true),
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCodeV, keyDown: false)
-    else {
-        throw ProductRuntimeError.eventCreationFailed
+    let codeUnits = Array(text.utf16)
+    guard !codeUnits.isEmpty else {
+        throw ProductRuntimeError.invalidRequest("Insert requests require a non-empty text payload.")
     }
 
-    keyDown.flags = .maskCommand
-    keyUp.flags = .maskCommand
+    for start in stride(from: 0, to: codeUnits.count, by: 32) {
+        let end = min(start + 32, codeUnits.count)
+        var chunk = Array(codeUnits[start..<end])
+        guard
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+        else {
+            throw ProductRuntimeError.eventCreationFailed
+        }
+        keyDown.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+    }
 
-    keyDown.post(tap: .cghidEventTap)
-    usleep(15_000)
-    keyUp.post(tap: .cghidEventTap)
+    usleep(30_000)
+    var focusedValueAfter: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        appElement,
+        kAXFocusedUIElementAttribute as CFString,
+        &focusedValueAfter
+    ) == .success, let focusedValueAfter else {
+        throw ProductRuntimeError.textInsertionFailed("The focused target changed during insertion.")
+    }
+    let focusedElementAfter = unsafeBitCast(focusedValueAfter, to: AXUIElement.self)
+    guard CFEqual(focusedElementBefore, focusedElementAfter),
+          copyStringAttribute(kAXValueAttribute as CFString, from: focusedElementAfter) == expectedValue else {
+        throw ProductRuntimeError.textInsertionFailed("The inserted text could not be verified in the focused target.")
+    }
+}
+
+func insertTextWithoutPasteboard(_ text: String, focus: FocusSnapshot?) throws -> InsertRoute {
+    try validateInsertionTarget(focus)
+    guard let pid = focus?.app?.pid else {
+        throw ProductRuntimeError.textInsertionFailed("The target application could not be identified.")
+    }
+    let allowsFallback = InsertionTargetPolicy.allowsUnicodeKeyboardFallback(
+        editable: focus?.editable,
+        role: focus?.role
+    )
+    if let route = insertWithAccessibility(
+        text,
+        appPID: pid,
+        allowValueReplacement: allowsFallback
+    ) {
+        return route
+    }
+    guard allowsFallback else {
+        throw ProductRuntimeError.nonEditableTarget
+    }
+    try insertWithUnicodeKeyboardEvents(text, appPID: pid)
+    return .unicodeKeyboardEvents
 }
 
 func isProductFrontmost(_ focus: FocusSnapshot?) -> Bool {
@@ -1175,17 +1393,49 @@ func isProductFrontmost(_ focus: FocusSnapshot?) -> Bool {
 }
 
 func ensureDirectory(_ path: String) throws {
+    let privateDirectoryAttributes: [FileAttributeKey: Any] = [.posixPermissions: 0o700]
     try FileManager.default.createDirectory(
         at: URL(fileURLWithPath: path),
         withIntermediateDirectories: true,
-        attributes: nil
+        attributes: privateDirectoryAttributes
     )
+    try FileManager.default.setAttributes(privateDirectoryAttributes, ofItemAtPath: path)
+}
+
+func diagnosticContentPersistenceEnabled() -> Bool {
+    ProcessInfo.processInfo.environment["PUSHWRITE_INCLUDE_SENSITIVE_TEST_ARTIFACTS"] == "1"
+}
+
+func privacySafeJSONData<T: Encodable>(_ value: T, prettyPrinted: Bool) throws -> Data {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = prettyPrinted ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
+    let data = try encoder.encode(value)
+    guard !diagnosticContentPersistenceEnabled() else {
+        return data
+    }
+
+    let object = try JSONSerialization.jsonObject(with: data)
+    func redacted(_ value: Any) -> Any {
+        if let dictionary = value as? [String: Any] {
+            return dictionary.reduce(into: [String: Any]()) { result, pair in
+                if pair.key == "text" || pair.key == "value" {
+                    result[pair.key] = ""
+                } else {
+                    result[pair.key] = redacted(pair.value)
+                }
+            }
+        }
+        if let array = value as? [Any] {
+            return array.map(redacted)
+        }
+        return value
+    }
+    let options: JSONSerialization.WritingOptions = prettyPrinted ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
+    return try JSONSerialization.data(withJSONObject: redacted(object), options: options)
 }
 
 func writeJSON<T: Encodable>(_ value: T, to path: String) throws {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    let data = try encoder.encode(value)
+    let data = try privacySafeJSONData(value, prettyPrinted: true)
     try FileManager.default.createDirectory(
         at: URL(fileURLWithPath: path).deletingLastPathComponent(),
         withIntermediateDirectories: true,
@@ -1195,9 +1445,7 @@ func writeJSON<T: Encodable>(_ value: T, to path: String) throws {
 }
 
 func appendJSONLine<T: Encodable>(_ value: T, to path: String) throws {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    let data = try encoder.encode(value)
+    let data = try privacySafeJSONData(value, prettyPrinted: false)
     try FileManager.default.createDirectory(
         at: URL(fileURLWithPath: path).deletingLastPathComponent(),
         withIntermediateDirectories: true,
@@ -1366,13 +1614,18 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyState: HotKeyStateSnapshot
     private var flowSnapshot: ProductFlowSnapshot
     private var pollTimer: Timer?
+    private var recordingWatchdog: Timer?
     private var blockedWindowController: ProductFeedbackWindowController?
+    private var menuBarController: PushWriteMenuBarController?
+    private var settingsWindowController: PushWriteSettingsWindowController?
     private var launchBlockedUIHasBeenPresented = false
     private var isHotKeyHeld = false
     private var isAwaitingMicrophonePermission = false
     private var pendingStopAfterRecordingStart = false
     private var activeRecordingSession: ActiveRecordingSession?
     private let minimumUsableRecordingDurationMs = 300
+    private let controlInterfaceEnabled =
+        ProcessInfo.processInfo.environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] == "1"
 
     init(launchOptions: LaunchOptions) {
         let hotKeyConfiguration = GlobalHotKeyConfiguration.default
@@ -1404,13 +1657,14 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.prohibited)
+        NSApp.setActivationPolicy(.accessory)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
             try prepareRuntime()
             registerGlobalHotKey()
+            configureMenuBar()
             try writeState(running: true)
         } catch {
             fputs("Product startup failed: \(error)\n", stderr)
@@ -1422,20 +1676,106 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             presentAccessibilityBlockedUIIfNeeded(triggeredByLaunch: true)
         }
 
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-            self?.pollRequestsDirectory()
+        if controlInterfaceEnabled {
+            pollTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+                self?.pollRequestsDirectory()
+            }
+            pollRequestsDirectory()
         }
-        pollRequestsDirectory()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         pollTimer?.invalidate()
+        recordingWatchdog?.invalidate()
         unregisterGlobalHotKey()
         if let activeRecordingSession {
             activeRecordingSession.recorder.stop()
+            if !diagnosticContentPersistenceEnabled() {
+                try? FileManager.default.removeItem(at: activeRecordingSession.fileURL)
+                try? FileManager.default.removeItem(at: activeRecordingSession.metadataURL)
+            }
             self.activeRecordingSession = nil
         }
         try? writeState(running: false)
+    }
+
+    private func configureMenuBar() {
+        let controller = PushWriteMenuBarController(initialSnapshot: menuBarSnapshot())
+        controller.onOpenAccessibilitySettings = { [weak self] in self?.openAccessibilitySettings() }
+        controller.onOpenMicrophoneSettings = { [weak self] in self?.openMicrophoneSettings() }
+        controller.onShowSettings = { [weak self] in self?.showSettings() }
+        controller.onShowAbout = { [weak self] in self?.showAbout() }
+        controller.onQuit = { NSApp.terminate(nil) }
+        menuBarController = controller
+    }
+
+    private func menuBarSnapshot() -> MenuBarSnapshot {
+        let state: MenuBarPresentationState
+        let statusText: String
+        switch flowSnapshot.state {
+        case .recording:
+            state = .recording
+            statusText = "Aufnahme läuft"
+        case .processing, .transcribing, .inserting:
+            state = .processing
+            statusText = "Verarbeitung läuft"
+        case .blocked, .error:
+            state = .attention
+            statusText = "Handlungsbedarf"
+        case .idle, .triggered, .done:
+            state = (hotKeyState.registered && isAccessibilityTrusted(prompt: false)) ? .ready : .attention
+            statusText = state == .ready ? "Bereit" : "Berechtigung prüfen"
+        }
+
+        let microphoneText: String
+        switch currentMicrophonePermissionStatus() {
+        case .granted: microphoneText = "Erlaubt"
+        case .denied: microphoneText = "Nicht erlaubt"
+        case .restricted: microphoneText = "Eingeschränkt"
+        case .notDetermined: microphoneText = "Noch nicht angefragt"
+        }
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "0.2.0-alpha.1"
+        return MenuBarSnapshot(
+            state: state,
+            statusText: statusText,
+            hotKeyText: hotKeyConfiguration.displayString,
+            accessibilityGranted: isAccessibilityTrusted(prompt: false),
+            microphoneStatusText: microphoneText,
+            versionText: version
+        )
+    }
+
+    private func updateMenuBar() {
+        menuBarController?.update(menuBarSnapshot())
+    }
+
+    private func showSettings() {
+        let snapshot = menuBarSnapshot()
+        let selectedLanguage = UserDefaults.standard.string(forKey: "transcriptionLanguage")
+            ?? normalizedWhisperLanguage(launchOptions.whisperLanguage)
+        let controller = PushWriteSettingsWindowController(
+            hotKeyText: snapshot.hotKeyText,
+            accessibilityGranted: snapshot.accessibilityGranted,
+            microphoneStatus: snapshot.microphoneStatusText,
+            selectedLanguage: selectedLanguage
+        )
+        controller.onTranscriptionLanguageChanged = { value in
+            UserDefaults.standard.set(value, forKey: "transcriptionLanguage")
+        }
+        settingsWindowController = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func showAbout() {
+        let snapshot = menuBarSnapshot()
+        let alert = NSAlert()
+        alert.messageText = "PushWrite \(snapshot.versionText)"
+        alert.informativeText = "Local voice input for macOS\nPowered by Whisper\n\nSprachdaten und Transkription werden lokal verarbeitet."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     private func registerGlobalHotKey() {
@@ -1591,6 +1931,31 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         isProcessing = true
         activeHotKeyFlowID = flowID
         pendingStopAfterRecordingStart = false
+        transitionFlow(
+            to: .triggered,
+            id: flowID,
+            trigger: .globalHotKey,
+            textLength: 0,
+            microphonePermissionStatus: currentMicrophonePermissionStatus()
+        )
+
+        guard receiptObservation.accessibilityTrusted else {
+            presentAccessibilityBlockedUIIfNeeded(triggeredByLaunch: false)
+            emitSystemBeep()
+            completeGlobalHotKeyFlow(
+                flowID: flowID,
+                response: makeBlockedHotKeyResponse(
+                    flowID: flowID,
+                    receiptObservation: receiptObservation,
+                    microphonePermissionStatus: currentMicrophonePermissionStatus(),
+                    blockedReason: ProductRuntimeError.accessibilityDenied.description,
+                    requestedMicrophonePermission: false,
+                    localUserFeedback: .systemBeep
+                )
+            )
+            return
+        }
+
         logHotKeyRecordingEvent(flowID: flowID, event: "recording-start-attempt", detail: nil)
         startHotKeyRecordingAttempt(flowID: flowID, receiptObservation: receiptObservation)
     }
@@ -1642,8 +2007,10 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
     private func localUserFeedbackForTranscriptionGate(_ gate: TranscriptionInsertGate) -> LocalUserFeedback? {
         switch gate {
-        case .transcriptionSkipped, .transcriptionFailed, .emptyTranscriptionText, .whitespaceOnlyTranscriptionText, .empty, .tooShort:
+        case .transcriptionFailed:
             return .blockedPanel
+        case .transcriptionSkipped, .emptyTranscriptionText, .whitespaceOnlyTranscriptionText, .empty, .tooShort:
+            return .systemBeep
         case .passed:
             return nil
         }
@@ -1711,11 +2078,11 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private func presentMicrophonePermissionBlockedUI(blockedReason: String) {
         let bundleName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "PushWrite"
         presentFeedbackPanel(
-            windowTitle: "PushWrite setup required",
-            title: "Microphone access required",
-            message: "\(bundleName) cannot start recording until microphone access is enabled for this app in System Settings > Privacy & Security > Microphone.\n\n\(blockedReason)",
-            primaryButtonTitle: "Open System Settings",
-            dismissButtonTitle: "Not Now",
+            windowTitle: "PushWrite einrichten",
+            title: "Mikrofon erlauben",
+            message: "\(bundleName) benötigt das Mikrofon nur während die Tastenkombination gehalten wird. Aktiviere den Zugriff unter Systemeinstellungen > Datenschutz & Sicherheit > Mikrofon.\n\n\(blockedReason)",
+            primaryButtonTitle: "Systemeinstellungen öffnen",
+            dismissButtonTitle: "Später",
             onPrimaryAction: { [weak self] in
                 self?.openMicrophoneSettings()
             }
@@ -1775,6 +2142,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                         requestedMicrophonePermission: requestedPermission
                     )
                     self.activeRecordingSession = session
+                    self.armRecordingWatchdog(for: session)
                     self.transitionFlow(
                         to: .recording,
                         id: flowID,
@@ -1875,6 +2243,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         logHotKeyRecordingEvent(flowID: session.flowID, event: "recording-stop-started", detail: nil)
+        recordingWatchdog?.invalidate()
+        recordingWatchdog = nil
         activeRecordingSession = nil
         pendingStopAfterRecordingStart = false
 
@@ -1888,7 +2258,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         )
 
         transitionFlow(
-            to: .processing,
+            to: .transcribing,
             id: session.flowID,
             trigger: .globalHotKey,
             textLength: 0,
@@ -1897,7 +2267,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             microphonePermissionStatus: .granted,
             requestedMicrophonePermission: session.requestedMicrophonePermission
         )
-        logHotKeyRecordingEvent(flowID: session.flowID, event: "processing-state-entered", detail: nil)
+        logHotKeyRecordingEvent(flowID: session.flowID, event: "transcribing-state-entered", detail: nil)
 
         workerQueue.async {
             let response = self.finishRecordingSession(
@@ -1911,11 +2281,29 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func armRecordingWatchdog(for session: ActiveRecordingSession) {
+        recordingWatchdog?.invalidate()
+        recordingWatchdog = Timer.scheduledTimer(withTimeInterval: 120, repeats: false) { [weak self, weak session] _ in
+            guard let self, let session, self.activeRecordingSession?.flowID == session.flowID else {
+                return
+            }
+            self.logHotKeyRecordingEvent(
+                flowID: session.flowID,
+                event: "recording-watchdog-stop",
+                detail: "Maximum recording duration of 120 seconds reached."
+            )
+            self.stopActiveRecordingSession(session)
+        }
+    }
+
     private func finishRecordingSession(
         _ session: ActiveRecordingSession,
         measuredDurationMs: Int,
         focusAtStop: FocusSnapshot?
     ) -> ProductResponse {
+        defer {
+            cleanupProcessingArtifacts(for: session)
+        }
         let recordingStoppedAt = isoTimestamp()
         let productFrontmostAtReceipt = isProductFrontmost(session.focusAtStart)
         var recordedArtifact: RecordingArtifact?
@@ -1993,6 +2381,22 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 localUserFeedback: nil,
                 error: "\(error)"
             )
+        }
+    }
+
+    private func cleanupProcessingArtifacts(for session: ActiveRecordingSession) {
+        guard !diagnosticContentPersistenceEnabled() else {
+            return
+        }
+        let pathsToRemove = [
+            session.fileURL.path,
+            session.metadataURL.path,
+            paths.transcriptionTextFile(for: session.flowID),
+            paths.transcriptionRawJSONFile(for: session.flowID),
+            paths.transcriptionArtifactFile(for: session.flowID),
+        ]
+        for path in pathsToRemove where FileManager.default.fileExists(atPath: path) {
+            try? FileManager.default.removeItem(atPath: path)
         }
     }
 
@@ -2174,7 +2578,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 transcriptionArtifact: transcriptionArtifact,
                 transcriptionResult: transcriptionResult,
                 transcriptionInsertGate: reason,
-                gatedTranscriptionFeedback: nil,
+                gatedTranscriptionFeedback: reason == .transcriptionFailed ? nil : .systemBeep,
                 localUserFeedback: localUserFeedbackForTranscriptionGate(reason)
             )
             let insertResult = InsertResult(
@@ -2199,6 +2603,18 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             try? persistInsertResult(insertResult)
             return response
         case let .passed(text):
+            DispatchQueue.main.sync {
+                self.transitionFlow(
+                    to: .inserting,
+                    id: session.flowID,
+                    trigger: .globalHotKey,
+                    textLength: text.count,
+                    recordingDurationMs: recordingArtifact.durationMs,
+                    recordingFilePath: recordingArtifact.filePath,
+                    microphonePermissionStatus: .granted,
+                    requestedMicrophonePermission: session.requestedMicrophonePermission
+                )
+            }
             logHotKeyRecordingEvent(
                 flowID: session.flowID,
                 event: "insert-started",
@@ -2458,7 +2874,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     ) -> TranscriptionArtifact {
         let configuredCLIPath = optionalNonEmptyTrimmed(launchOptions.whisperCLIPath) ?? bundledWhisperCLIPath()
         let configuredModelPath = optionalNonEmptyTrimmed(launchOptions.whisperModelPath) ?? bundledWhisperModelPath()
-        let configuredLanguage = normalizedWhisperLanguage(launchOptions.whisperLanguage)
+        let configuredLanguage = normalizedWhisperLanguage(
+            UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? launchOptions.whisperLanguage
+        )
         let artifactPath = paths.transcriptionArtifactFile(for: session.flowID)
         let textFilePath = paths.transcriptionTextFile(for: session.flowID)
         let rawOutputJSONPath = paths.transcriptionRawJSONFile(for: session.flowID)
@@ -2575,18 +2993,36 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             throw ProductRuntimeError.transcriptionLaunchFailed("\(error)")
         }
 
-        process.waitUntilExit()
+        stdoutPipe.fileHandleForWriting.closeFile()
+        stderrPipe.fileHandleForWriting.closeFile()
+        let pipeDrainGroup = DispatchGroup()
+        pipeDrainGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            _ = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            pipeDrainGroup.leave()
+        }
+        pipeDrainGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            _ = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            pipeDrainGroup.leave()
+        }
 
-        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let processOutput = ([stdout, stderr].joined(separator: "\n"))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let completion = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in completion.signal() }
+        if completion.wait(timeout: .now() + 120) == .timedOut {
+            process.terminate()
+            if completion.wait(timeout: .now() + 5) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                _ = completion.wait(timeout: .now() + 2)
+            }
+            _ = pipeDrainGroup.wait(timeout: .now() + 2)
+            throw ProductRuntimeError.transcriptionProcessFailed("inference exceeded the 120-second limit")
+        }
+
+        _ = pipeDrainGroup.wait(timeout: .now() + 2)
 
         guard process.terminationStatus == 0 else {
-            let message = processOutput.isEmpty
-                ? "exit status \(process.terminationStatus)"
-                : "exit status \(process.terminationStatus): \(processOutput)"
-            throw ProductRuntimeError.transcriptionProcessFailed(message)
+            throw ProductRuntimeError.transcriptionProcessFailed("exit status \(process.terminationStatus)")
         }
 
         guard FileManager.default.fileExists(atPath: textOutputPath) else {
@@ -2775,16 +3211,36 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         lastTranscription = response.transcriptionArtifact
 
         let completionEvent: String
+        let terminalState: ProductFlowState
         switch response.status {
         case .succeeded:
             completionEvent = "flow-completed-succeeded"
+            terminalState = .done
         case .blocked:
             completionEvent = "flow-completed-blocked"
+            terminalState = .blocked
         case .failed, .invalidRequest:
             completionEvent = "flow-completed-failed"
+            terminalState = .error
         case .ready, .stopped:
             completionEvent = "flow-completed-unexpected-status"
+            terminalState = .error
         }
+        transitionFlow(
+            to: terminalState,
+            id: flowID,
+            trigger: .globalHotKey,
+            textLength: response.textLength,
+            transcriptionInsertGate: response.transcriptionInsertGate,
+            gatedTranscriptionFeedback: response.gatedTranscriptionFeedback,
+            blockedReason: response.blockedReason,
+            error: response.error,
+            recordingDurationMs: response.recordingArtifact?.durationMs,
+            recordingFilePath: response.recordingArtifact?.filePath,
+            microphonePermissionStatus: response.microphonePermissionStatus,
+            requestedMicrophonePermission: response.requestedMicrophonePermission,
+            localUserFeedback: response.localUserFeedback
+        )
         logHotKeyRecordingEvent(flowID: flowID, event: completionEvent, detail: response.error ?? response.blockedReason)
 
         transitionFlow(
@@ -2811,7 +3267,14 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 event: "local-feedback-evaluated",
                 detail: "feedbackCase=\(terminalFeedback?.feedbackCase.rawValue ?? "none"),insertStatus=\(response.status.rawValue),insertGate=\(response.transcriptionInsertGate?.rawValue ?? "none")"
             )
-            if let terminalFeedback {
+            if response.localUserFeedback == .systemBeep {
+                emitSystemBeep()
+                logHotKeyRecordingEvent(
+                    flowID: flowID,
+                    event: "local-feedback-triggered",
+                    detail: "feedbackCase=\(terminalFeedback?.feedbackCase.rawValue ?? "none"),channel=systemBeep"
+                )
+            } else if let terminalFeedback {
                 presentTerminalHotKeyFeedback(
                     title: terminalFeedback.title,
                     message: terminalFeedback.message
@@ -2859,6 +3322,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             localUserFeedback: localUserFeedback
         )
         flowSnapshot = snapshot
+        updateMenuBar()
 
         if let id, let trigger {
             let event = ProductFlowEvent(
@@ -2904,10 +3368,12 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
     private func prepareRuntime() throws {
         try ensureDirectory(paths.runtimeDir)
-        try ensureDirectory(paths.requestsDir)
-        try ensureDirectory(paths.responsesDir)
         try ensureDirectory(paths.logsDir)
         try ensureDirectory(paths.recordingsDir)
+        if controlInterfaceEnabled {
+            try ensureDirectory(paths.requestsDir)
+            try ensureDirectory(paths.responsesDir)
+        }
     }
 
     private func pollRequestsDirectory() {
@@ -3114,7 +3580,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             id: requestID,
             kind: .insertTranscription,
             text: text,
-            restoreClipboard: false,
+            restoreClipboard: true,
             promptAccessibility: false,
             settleDelayMs: nil,
             pasteDelayMs: nil,
@@ -3170,7 +3636,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 transcriptionInsertGate: nil,
                 gatedTranscriptionFeedback: nil,
                 hotKeyInteractionModel: nil,
-                insertRoute: .pasteboardCommandV,
+                insertRoute: nil,
                 insertSource: source,
                 focusAtReceipt: focusAtReceipt,
                 focusBeforePaste: focusAtReceipt,
@@ -3198,16 +3664,20 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
         sleepMs(settleDelayMs)
         let focusBeforePaste = captureFocusSnapshot(isTrusted: true)
-        let originalPasteboardSnapshot = request.restoreClipboard ? snapshotGeneralPasteboard() : nil
-        let originalPasteboardMetadata = originalPasteboardSnapshot.map {
-            PasteboardMetadata(changeCount: $0.changeCount, itemCount: $0.items.count)
-        }
-
-        writePlainTextToPasteboard(text)
-        sleepMs(pasteDelayMs)
+        let pasteboard = NSPasteboard.general
+        let originalPasteboardMetadata = PasteboardMetadata(
+            changeCount: pasteboard.changeCount,
+            itemCount: pasteboard.pasteboardItems?.count ?? 0
+        )
+        let route: InsertRoute
 
         do {
-            try postSyntheticPaste()
+            if let receiptPID = focusAtReceipt?.app?.pid,
+               let currentPID = focusBeforePaste?.app?.pid,
+               receiptPID != currentPID {
+                throw ProductRuntimeError.textInsertionFailed("The target application changed while PushWrite was processing.")
+            }
+            route = try insertTextWithoutPasteboard(text, focus: focusBeforePaste)
         } catch {
             let focusAfterFailure = captureFocusSnapshot(isTrusted: true)
             return ProductResponse(
@@ -3230,7 +3700,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 transcriptionInsertGate: nil,
                 gatedTranscriptionFeedback: nil,
                 hotKeyInteractionModel: nil,
-                insertRoute: .pasteboardCommandV,
+                insertRoute: nil,
                 insertSource: source,
                 focusAtReceipt: focusAtReceipt,
                 focusBeforePaste: focusBeforePaste,
@@ -3241,7 +3711,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 productFrontmostAfterPaste: isProductFrontmost(focusAfterFailure),
                 originalPasteboard: originalPasteboardMetadata,
                 syntheticPastePosted: false,
-                clipboardRestored: false,
+                clipboardRestored: pasteboard.changeCount == originalPasteboardMetadata.changeCount,
                 recordingStartedAt: nil,
                 recordingStoppedAt: nil,
                 recordingArtifact: nil,
@@ -3253,11 +3723,6 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let focusAfterPaste = captureFocusSnapshot(isTrusted: true)
-
-        if let snapshot = originalPasteboardSnapshot {
-            sleepMs(restoreDelayMs)
-            restoreGeneralPasteboard(from: snapshot)
-        }
 
         return ProductResponse(
             id: request.id,
@@ -3279,7 +3744,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             transcriptionInsertGate: nil,
             gatedTranscriptionFeedback: nil,
             hotKeyInteractionModel: nil,
-            insertRoute: .pasteboardCommandV,
+            insertRoute: route,
             insertSource: source,
             focusAtReceipt: focusAtReceipt,
             focusBeforePaste: focusBeforePaste,
@@ -3289,8 +3754,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             productFrontmostBeforePaste: isProductFrontmost(focusBeforePaste),
             productFrontmostAfterPaste: isProductFrontmost(focusAfterPaste),
             originalPasteboard: originalPasteboardMetadata,
-            syntheticPastePosted: true,
-            clipboardRestored: originalPasteboardSnapshot != nil,
+            syntheticPastePosted: false,
+            clipboardRestored: pasteboard.changeCount == originalPasteboardMetadata.changeCount,
             recordingStartedAt: nil,
             recordingStoppedAt: nil,
             recordingArtifact: nil,
@@ -3409,11 +3874,11 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             self.launchBlockedUIHasBeenPresented = self.launchBlockedUIHasBeenPresented || triggeredByLaunch
             let bundleName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "PushWrite"
             self.presentFeedbackPanel(
-                windowTitle: "PushWrite setup required",
-                title: "Accessibility access required",
-                message: "\(bundleName) cannot insert text until Accessibility is enabled for this app in System Settings > Privacy & Security > Accessibility.\n\n\(ProductRuntimeError.accessibilityDenied.description)",
-                primaryButtonTitle: "Open System Settings",
-                dismissButtonTitle: "Not Now",
+                windowTitle: "PushWrite einrichten",
+                title: "Bedienungshilfen erlauben",
+                message: "PushWrite benötigt diese Berechtigung, um erkannten Text an der aktuellen Einfügemarke einzusetzen. Audio und Text werden lokal verarbeitet. Aktiviere \(bundleName) unter Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen.",
+                primaryButtonTitle: "Systemeinstellungen öffnen",
+                dismissButtonTitle: "Später",
                 onPrimaryAction: { [weak self] in
                     self?.openAccessibilitySettings()
                 }
@@ -3445,7 +3910,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 onDismiss: { [weak self] in
                     self?.blockedWindowController = nil
                     if !isAccessibilityTrusted(prompt: false) {
-                        NSApp.setActivationPolicy(.prohibited)
+                        NSApp.setActivationPolicy(.accessory)
                     }
                     try? self?.writeState(running: true)
                 }
@@ -3463,7 +3928,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             controller.close()
             blockedWindowController = nil
         }
-        NSApp.setActivationPolicy(.prohibited)
+        NSApp.setActivationPolicy(.accessory)
     }
 
     private func openAccessibilitySettings() {

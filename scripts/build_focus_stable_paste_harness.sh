@@ -9,7 +9,7 @@ OUTPUT_DIR="${1:-/tmp/pushwrite-focus-stable-paste-harness}"
 APP_DIR="$OUTPUT_DIR/FocusStablePasteHarness.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 MODULE_CACHE_DIR="$OUTPUT_DIR/module-cache"
-SDK_PATH="$(xcrun --show-sdk-path)"
+SDK_PATH="${PUSHWRITE_SDK_PATH:-$(xcrun --show-sdk-path)}"
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$MODULE_CACHE_DIR"
@@ -18,6 +18,7 @@ cp "$INFO_PLIST" "$APP_DIR/Contents/Info.plist"
 swiftc \
   -module-cache-path "$MODULE_CACHE_DIR" \
   -sdk "$SDK_PATH" \
+  -target arm64-apple-macos13.0 \
   -framework AppKit \
   -framework ApplicationServices \
   "$SOURCE_FILE" \

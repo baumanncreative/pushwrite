@@ -1,4 +1,6 @@
-# Technical Decisions
+# Technical decisions
+
+> Current release baseline: [runtime-0.2.0-alpha.1.md](runtime-0.2.0-alpha.1.md). Historical material below remains as decision provenance; where it conflicts, the current release baseline controls.
 
 ## Zweck dieses Dokuments
 

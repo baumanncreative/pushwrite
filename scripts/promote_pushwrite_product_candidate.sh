@@ -24,6 +24,17 @@ if [[ "$SOURCE_APP" == "$TARGET_APP" ]]; then
   exit 64
 fi
 
+if ! codesign --verify --deep --strict "$SOURCE_APP"; then
+  echo "Candidate bundle failed code-signature verification: $SOURCE_APP" >&2
+  exit 1
+fi
+EXPECTED_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$ROOT_DIR/app/macos/PushWrite/Info.plist")"
+SOURCE_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$SOURCE_APP/Contents/Info.plist")"
+if [[ "$SOURCE_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then
+  echo "Candidate bundle identifier mismatch: expected $EXPECTED_BUNDLE_ID but found $SOURCE_BUNDLE_ID" >&2
+  exit 1
+fi
+
 mkdir -p "$TARGET_OUTPUT_DIR" "$ARCHIVE_ROOT"
 
 if [[ -d "$TARGET_APP" || -f "$TARGET_IDENTITY" ]]; then

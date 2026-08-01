@@ -63,6 +63,14 @@ if [[ -z "$VERSION" || -z "$RC_TAG" ]]; then
   echo "Version and RC tag must be non-empty." >&2
   exit 64
 fi
+if ! printf '%s' "$VERSION" | /usr/bin/grep -Eq '^[0-9A-Za-z][0-9A-Za-z.+-]*$'; then
+  echo "Version contains unsupported path or filename characters: $VERSION" >&2
+  exit 64
+fi
+if ! printf '%s' "$RC_TAG" | /usr/bin/grep -Eq '^[0-9A-Za-z][0-9A-Za-z.+-]*$'; then
+  echo "RC tag contains unsupported path or filename characters: $RC_TAG" >&2
+  exit 64
+fi
 
 RC_NAME="PushWrite-v${VERSION}-${RC_TAG}"
 RC_DIR="${OUTPUT_ROOT:A}/${RC_NAME}"
@@ -96,6 +104,7 @@ ditto "$PRODUCT_BUNDLE_PATH" "$RC_APP_PATH"
 INFO_PATH="$RC_APP_PATH/Contents/Info.plist"
 EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PATH")"
 BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PATH")"
+BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PATH")"
 EXECUTABLE_PATH="$RC_APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 BUNDLED_WHISPER_CLI_PATH="$RC_APP_PATH/Contents/Resources/whisper/bin/whisper-cli"
 BUNDLED_WHISPER_MODEL_PATH="$RC_APP_PATH/Contents/Resources/whisper/models/ggml-tiny.bin"
@@ -110,6 +119,15 @@ if [[ ! -x "$BUNDLED_WHISPER_CLI_PATH" ]]; then
 fi
 if [[ ! -f "$BUNDLED_WHISPER_MODEL_PATH" ]]; then
   echo "Missing bundled whisper model in release candidate bundle: $BUNDLED_WHISPER_MODEL_PATH" >&2
+  exit 1
+fi
+EXPECTED_BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
+if [[ "$BUNDLE_IDENTIFIER" != "$EXPECTED_BUNDLE_IDENTIFIER" ]]; then
+  echo "Unexpected bundle identifier: expected $EXPECTED_BUNDLE_IDENTIFIER but found $BUNDLE_IDENTIFIER" >&2
+  exit 1
+fi
+if [[ "$BUNDLE_VERSION" != "$VERSION" ]]; then
+  echo "Unexpected bundle version: expected $VERSION but found $BUNDLE_VERSION" >&2
   exit 1
 fi
 

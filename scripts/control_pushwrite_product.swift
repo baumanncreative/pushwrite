@@ -634,6 +634,9 @@ func launchProduct(options: Options) throws -> ProductState {
     let process = Process()
     process.executableURL = executableURL
     process.arguments = arguments
+    var environment = ProcessInfo.processInfo.environment
+    environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] = "1"
+    process.environment = environment
     process.standardOutput = Pipe()
     process.standardError = Pipe()
     try process.run()

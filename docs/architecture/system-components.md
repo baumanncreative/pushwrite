@@ -1,4 +1,6 @@
-# System Components
+# System components
+
+> Current implemented component map: [runtime-0.2.0-alpha.1.md](runtime-0.2.0-alpha.1.md). The descriptions below predate the installable Alpha and are retained as architectural history.
 
 ## Zweck dieses Dokuments
 

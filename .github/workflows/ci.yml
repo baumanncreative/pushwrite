@@ -1,0 +1,43 @@
+name: PushWrite CI
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit tests
+        run: ./scripts/run_pushwrite_unit_tests.sh
+
+      - name: Build static whisper runtime
+        run: ./scripts/build_whispercpp_minimal.sh
+
+      - name: Build release app
+        run: ./scripts/build_pushwrite_product.sh /tmp/pushwrite-ci-product
+
+      - name: Verify bundle and runtime
+        run: |
+          codesign --verify --deep --strict --verbose=4 /tmp/pushwrite-ci-product/PushWrite.app
+          otool -L /tmp/pushwrite-ci-product/PushWrite.app/Contents/Resources/whisper/bin/whisper-cli | tee /tmp/whisper-links.txt
+          if grep -F "${GITHUB_WORKSPACE}" /tmp/whisper-links.txt; then
+            echo "whisper-cli contains a repository-local dynamic dependency" >&2
+            exit 1
+          fi
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /tmp/pushwrite-ci-product/PushWrite.app/Contents/Info.plist)" = "0.2.0-alpha.1"
+          shasum -a 256 -c app/macos/PushWrite/Assets/whisper-model.sha256
+
+      - name: Check for common committed secrets
+        run: |
+          if git grep -nE '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,})' -- ':!docs/execution/011-PushWrite-0.2.0-alpha.1.md'; then
+            echo "Potential secret material detected" >&2
+            exit 1
+          fi

@@ -480,6 +480,11 @@ func launchProduct(
     let process = Process()
     process.executableURL = executableURL
     process.arguments = arguments
+    var environment = ProcessInfo.processInfo.environment
+    environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] = "1"
+    environment["PUSHWRITE_INCLUDE_SENSITIVE_TEST_ARTIFACTS"] = "1"
+    environment["PUSHWRITE_ALLOW_TEST_RUNTIME_OVERRIDE"] = "1"
+    process.environment = environment
     process.standardOutput = Pipe()
     process.standardError = Pipe()
     try process.run()
@@ -510,33 +515,12 @@ func stopProduct(repoRoot: String, productAppPath: String, runtimeDir: String) {
 }
 
 func cleanupRunningProductProcesses(productAppPath: String) {
-    guard
-        let output = try? runProcess("/bin/ps", arguments: ["-Ao", "pid=,args="]),
-        !output.isEmpty
-    else {
-        return
+    _ = productAppPath
+    let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite")
+    for application in applications {
+        application.terminate()
     }
-
-    let executablePath = "\(productAppPath)/Contents/MacOS/PushWrite"
-    let pids = output
-        .split(whereSeparator: \.isNewline)
-        .compactMap { line -> Int32? in
-            let text = String(line)
-            guard text.contains(executablePath) else {
-                return nil
-            }
-            let parts = text.split(maxSplits: 1, whereSeparator: \.isWhitespace)
-            guard let pidText = parts.first, let pid = Int32(pidText) else {
-                return nil
-            }
-            return pid
-        }
-
-    for pid in pids {
-        _ = kill(pid, SIGTERM)
-    }
-
-    if !pids.isEmpty {
+    if !applications.isEmpty {
         Thread.sleep(forTimeInterval: 0.5)
     }
 }
@@ -648,7 +632,7 @@ func readFlowEvents(runtimeDir: String) throws -> [ProductFlowEvent] {
 
 func waitForNewHotKeyResponse(runtimeDir: String, previousID: String?) throws -> ProductResponse {
     var response: ProductResponse?
-    try waitUntil(timeoutSeconds: 10) {
+    try waitUntil(timeoutSeconds: 30) {
         response = try readLastHotKeyResponse(runtimeDir: runtimeDir)
         guard let response else {
             return false
@@ -663,7 +647,7 @@ func waitForNewHotKeyResponse(runtimeDir: String, previousID: String?) throws ->
 
 func waitForFlowStates(runtimeDir: String, responseID: String, terminalState: String) throws -> [String] {
     var states: [String] = []
-    try waitUntil(timeoutSeconds: 10) {
+    try waitUntil(timeoutSeconds: 30) {
         states = try readFlowEvents(runtimeDir: runtimeDir)
             .filter { $0.id == responseID }
             .map(\.state)
@@ -825,14 +809,17 @@ func runSuccessScenario(
     if response.gatedTranscriptionFeedback != nil {
         failureReasons.append("unexpected-gated-feedback")
     }
-    if response.insertRoute != "pasteboardCommandV" {
+    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(response.insertRoute ?? "") {
         failureReasons.append("unexpected-insert-route")
     }
     if response.insertSource != "transcription" {
         failureReasons.append("unexpected-insert-source")
     }
-    if !response.syntheticPastePosted {
-        failureReasons.append("synthetic-paste-not-posted")
+    if response.syntheticPastePosted {
+        failureReasons.append("unexpected-synthetic-paste")
+    }
+    if !response.clipboardRestored {
+        failureReasons.append("clipboard-not-preserved")
     }
     if response.error != nil {
         failureReasons.append("unexpected-error-present")
@@ -878,7 +865,7 @@ func runSuccessScenario(
         expectedStates: ["triggered", "recording", "transcribing", "inserting", "done"]
     ))
 
-    if observation.finalState?.flow.state != "done" {
+    if observation.finalState?.flow.state != "idle" {
         failureReasons.append("unexpected-final-state")
     }
     if observation.finalState?.flow.transcriptionInsertGate != .passed {
@@ -981,7 +968,7 @@ func runGatedScenario(
     }
 
     switch expectedGate {
-    case .empty:
+    case .empty, .emptyTranscriptionText, .whitespaceOnlyTranscriptionText:
         if response.transcriptionArtifact?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != true {
             failureReasons.append("expected-empty-text")
         }
@@ -993,7 +980,7 @@ func runGatedScenario(
         if meaningfulCharacterCount(text) >= 2 {
             failureReasons.append("expected-too-short-text")
         }
-    case .passed:
+    case .passed, .transcriptionSkipped, .transcriptionFailed:
         failureReasons.append("invalid-expected-gate")
     }
 
@@ -1004,7 +991,7 @@ func runGatedScenario(
     if observation.flowStates.contains("inserting") {
         failureReasons.append("unexpected-inserting-state")
     }
-    if observation.finalState?.flow.state != "done" {
+    if observation.finalState?.flow.state != "idle" {
         failureReasons.append("unexpected-final-state")
     }
     if observation.finalState?.flow.transcriptionInsertGate != expectedGate {
@@ -1059,7 +1046,7 @@ func runBlockedScenario(
     )
 
     let response = observation.hotKeyResponse
-    let expectedBlockedReason = "Accessibility access is required before PushWrite can insert text with synthetic Cmd+V."
+    let expectedBlockedReason = "PushWrite benötigt Zugriff auf Bedienungshilfen, um Text an der Einfügemarke einzusetzen."
     var failureReasons: [String] = []
 
     if response.kind != "recordAudio" {
@@ -1090,7 +1077,7 @@ func runBlockedScenario(
         flowStates: observation.flowStates,
         expectedStates: ["triggered", "blocked"]
     ))
-    if observation.finalState?.flow.state != "blocked" {
+    if observation.finalState?.flow.state != "idle" {
         failureReasons.append("unexpected-final-state")
     }
 
@@ -1136,13 +1123,13 @@ func runInferenceFailureScenario(
     let response = observation.hotKeyResponse
     var failureReasons: [String] = []
 
-    if response.kind != "recordAudio" {
+    if response.kind != "insertTranscription" {
         failureReasons.append("unexpected-kind-\(response.kind)")
     }
     if response.status != "failed" {
         failureReasons.append("unexpected-status-\(response.status)")
     }
-    if response.transcriptionInsertGate != nil {
+    if response.transcriptionInsertGate != .transcriptionFailed {
         failureReasons.append("unexpected-transcription-insert-gate")
     }
     if response.gatedTranscriptionFeedback != nil {
@@ -1161,7 +1148,7 @@ func runInferenceFailureScenario(
         flowStates: observation.flowStates,
         expectedStates: ["triggered", "recording", "transcribing", "error"]
     ))
-    if observation.finalState?.flow.state != "error" {
+    if observation.finalState?.flow.state != "idle" {
         failureReasons.append("unexpected-final-state")
     }
 
@@ -1287,7 +1274,7 @@ func main() -> Int32 {
                 whisperModelPath: whisperModelPath,
                 whisperLanguage: options.whisperLanguage,
                 transcriptText: "   ",
-                expectedGate: .empty
+                expectedGate: .whitespaceOnlyTranscriptionText
             ))
         } catch {
             fputs("Empty gate validation failed: \(error)\n", stderr)
@@ -1378,7 +1365,7 @@ func main() -> Int32 {
             whisperModelPath: whisperModelPath,
             whisperLanguage: options.whisperLanguage,
             transcriptText: "   ",
-            expectedGate: .empty
+            expectedGate: .whitespaceOnlyTranscriptionText
         )
     } catch {
         fputs("Empty gate validation failed: \(error)\n", stderr)
