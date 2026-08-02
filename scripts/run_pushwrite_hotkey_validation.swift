@@ -910,7 +910,7 @@ func runHotKeySeries(
         if hotKeyResponse.kind != "insertTranscription" {
             reasons.append("unexpected-kind-\(hotKeyResponse.kind)")
         }
-        if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(hotKeyResponse.insertRoute ?? "") {
+        if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents", "opaqueUnicodeKeyboardEvents"].contains(hotKeyResponse.insertRoute ?? "") {
             reasons.append("unexpected-insert-route")
         }
         if hotKeyResponse.insertSource != "transcription" {

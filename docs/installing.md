@@ -1,8 +1,8 @@
-# Installing the 0.2.0-alpha.2 build
+# Installing the 0.2.0-alpha.3 build
 
 ## Ad-hoc internal Alpha
 
-1. Open `PushWrite-0.2.0-alpha.2-macos-arm64.dmg`.
+1. Open `PushWrite-0.2.0-alpha.3-macos-arm64.dmg`.
 2. Drag `PushWrite.app` to the `Applications` link.
 3. Start `/Applications/PushWrite.app`.
 4. If Gatekeeper blocks the ad-hoc build, use System Settings → Privacy & Security only after verifying the published SHA-256 checksum.

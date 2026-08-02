@@ -791,7 +791,7 @@ func runContextSeries(
             reasons.append("unexpected-kind-\(productResponse.kind)")
         }
 
-        if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
+        if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents", "opaqueUnicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
             reasons.append("unexpected-insert-route")
         }
 
@@ -925,7 +925,7 @@ func runClipboardRestoreProbe(
     if productResponse.kind != "insertTranscription" {
         failures.append("unexpected-kind-\(productResponse.kind)")
     }
-    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
+    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents", "opaqueUnicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
         failures.append("unexpected-insert-route")
     }
     if productResponse.insertSource != "transcription" {

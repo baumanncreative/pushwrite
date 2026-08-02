@@ -96,5 +96,29 @@ enum PushWriteCoreTestRunner {
             !InsertionTargetPolicy.allowsUnicodeKeyboardFallback(editable: nil, role: nil),
             "unknown targets must not receive Unicode keyboard events"
         )
+        try expect(
+            InsertionTargetPolicy.allowsOpaqueUnicodeKeyboardFallback(
+                bundleID: "com.openai.codex",
+                editable: nil,
+                role: nil
+            ),
+            "the Codex composer must allow the focus-stable opaque compatibility route"
+        )
+        try expect(
+            !InsertionTargetPolicy.allowsOpaqueUnicodeKeyboardFallback(
+                bundleID: "com.example.unknown",
+                editable: nil,
+                role: nil
+            ),
+            "unknown applications must not use the opaque compatibility route"
+        )
+        try expect(
+            !InsertionTargetPolicy.allowsOpaqueUnicodeKeyboardFallback(
+                bundleID: "com.openai.codex",
+                editable: false,
+                role: nil
+            ),
+            "a known non-editable target must remain blocked"
+        )
     }
 }

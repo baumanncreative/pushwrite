@@ -12,7 +12,7 @@ Accessibility trust is checked before focus inspection and insertion. If it is a
 
 ## Protected input
 
-Targets with secure-text subroles or protected-content metadata are rejected. Non-editable targets and a target-app change between capture and insertion are also rejected. These guards apply before both Accessibility and Unicode-event insertion.
+Targets with secure-text subroles or protected-content metadata are rejected. Non-editable targets and a target-app change between capture and insertion are also rejected. These guards apply before both Accessibility and Unicode-event insertion. The Codex app currently exposes neither a focused AX element nor an editable role for its compose field. Its compatibility route is therefore limited to the exact bundle ID `com.openai.codex`, requires unknown editability and role, and rechecks the frontmost target PID immediately before and after posting Unicode events. Unknown applications cannot use this route.
 
 ## Clipboard
 

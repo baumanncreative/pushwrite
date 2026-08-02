@@ -6,6 +6,14 @@ All notable changes are documented here.
 
 No unreleased changes.
 
+## [0.2.0-alpha.3] - 2026-08-02
+
+### Fixed
+
+- Codex/ChatGPT compose fields that expose no focused Accessibility element now receive dictation through a bundle-scoped, focus-stable Unicode compatibility route
+- Electron-style targets are asked to expose their Accessibility tree before the compatibility route is considered
+- the compatibility route preserves the general pasteboard and remains unavailable to unknown applications, known non-editable targets and protected fields
+
 ## [0.2.0-alpha.2] - 2026-08-02
 
 ### Fixed

@@ -225,7 +225,7 @@ if [[ "$SUCCESS_STATUS" != "succeeded" ]]; then
   echo "Success validation failed: expected status=succeeded but got '$SUCCESS_STATUS'" >&2
   exit 1
 fi
-if [[ "$SUCCESS_INSERT_ROUTE" != "accessibilitySelectedText" && "$SUCCESS_INSERT_ROUTE" != "accessibilityValueReplacement" && "$SUCCESS_INSERT_ROUTE" != "unicodeKeyboardEvents" ]]; then
+if [[ "$SUCCESS_INSERT_ROUTE" != "accessibilitySelectedText" && "$SUCCESS_INSERT_ROUTE" != "accessibilityValueReplacement" && "$SUCCESS_INSERT_ROUTE" != "unicodeKeyboardEvents" && "$SUCCESS_INSERT_ROUTE" != "opaqueUnicodeKeyboardEvents" ]]; then
   echo "Success validation failed: expected a pasteboard-free insert route but got '$SUCCESS_INSERT_ROUTE'" >&2
   exit 1
 fi

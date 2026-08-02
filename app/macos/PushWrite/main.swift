@@ -26,6 +26,7 @@ enum InsertRoute: String, Codable {
     case accessibilitySelectedText
     case accessibilityValueReplacement
     case unicodeKeyboardEvents
+    case opaqueUnicodeKeyboardEvents
     case pasteboardCommandV
 }
 
@@ -1134,14 +1135,36 @@ func copyBooleanAttribute(_ name: CFString, from element: AXUIElement) -> Bool? 
     return number.boolValue
 }
 
-func copyFocusedElement(from app: NSRunningApplication) -> AXUIElement? {
-    let appElement = AXUIElementCreateApplication(app.processIdentifier)
+func copyFocusedElement(from appElement: AXUIElement) -> AXUIElement? {
     var value: CFTypeRef?
     let result = AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &value)
     guard result == .success, let focused = value else {
         return nil
     }
     return unsafeBitCast(focused, to: AXUIElement.self)
+}
+
+func copyFocusedElement(appPID: pid_t) -> AXUIElement? {
+    let appElement = AXUIElementCreateApplication(appPID)
+    if let focusedElement = copyFocusedElement(from: appElement) {
+        return focusedElement
+    }
+
+    // Electron keeps its web accessibility tree dormant until an assistive
+    // client requests it. Unsupported applications reject this attribute.
+    guard AXUIElementSetAttributeValue(
+        appElement,
+        "AXManualAccessibility" as CFString,
+        kCFBooleanTrue
+    ) == .success else {
+        return nil
+    }
+    usleep(30_000)
+    return copyFocusedElement(from: appElement)
+}
+
+func copyFocusedElement(from app: NSRunningApplication) -> AXUIElement? {
+    copyFocusedElement(appPID: app.processIdentifier)
 }
 
 func captureFocusSnapshot(isTrusted: Bool) -> FocusSnapshot? {
@@ -1231,16 +1254,9 @@ func insertWithAccessibility(
     appPID: pid_t,
     allowValueReplacement: Bool
 ) -> InsertRoute? {
-    let appElement = AXUIElementCreateApplication(appPID)
-    var focusedValue: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(
-        appElement,
-        kAXFocusedUIElementAttribute as CFString,
-        &focusedValue
-    ) == .success, let focusedValue else {
+    guard let focusedElement = copyFocusedElement(appPID: appPID) else {
         return nil
     }
-    let focusedElement = unsafeBitCast(focusedValue, to: AXUIElement.self)
     let valueBefore = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement)
     let selectedRange = copySelectedTextRange(from: focusedElement)
     let expectedValue: String?
@@ -1303,29 +1319,7 @@ func insertWithAccessibility(
     return .accessibilityValueReplacement
 }
 
-func insertWithUnicodeKeyboardEvents(_ text: String, appPID: pid_t) throws {
-    let appElement = AXUIElementCreateApplication(appPID)
-    var focusedValue: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(
-        appElement,
-        kAXFocusedUIElementAttribute as CFString,
-        &focusedValue
-    ) == .success, let focusedValue else {
-        throw ProductRuntimeError.textInsertionFailed("The focused target could not be verified.")
-    }
-    let focusedElementBefore = unsafeBitCast(focusedValue, to: AXUIElement.self)
-    guard let valueBefore = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElementBefore),
-          let selectedRange = copySelectedTextRange(from: focusedElementBefore),
-          selectedRange.location >= 0,
-          selectedRange.length >= 0,
-          selectedRange.location + selectedRange.length <= (valueBefore as NSString).length else {
-        throw ProductRuntimeError.textInsertionFailed("The focused target value could not be verified.")
-    }
-    let expectedValue = (valueBefore as NSString).replacingCharacters(
-        in: NSRange(location: selectedRange.location, length: selectedRange.length),
-        with: text
-    )
-
+func postUnicodeKeyboardEvents(_ text: String) throws {
     guard let source = CGEventSource(stateID: .combinedSessionState) else {
         throw ProductRuntimeError.eventSourceUnavailable
     }
@@ -1347,20 +1341,44 @@ func insertWithUnicodeKeyboardEvents(_ text: String, appPID: pid_t) throws {
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
     }
+}
+
+func insertWithUnicodeKeyboardEvents(_ text: String, appPID: pid_t) throws {
+    guard let focusedElementBefore = copyFocusedElement(appPID: appPID) else {
+        throw ProductRuntimeError.textInsertionFailed("The focused target could not be verified.")
+    }
+    guard let valueBefore = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElementBefore),
+          let selectedRange = copySelectedTextRange(from: focusedElementBefore),
+          selectedRange.location >= 0,
+          selectedRange.length >= 0,
+          selectedRange.location + selectedRange.length <= (valueBefore as NSString).length else {
+        throw ProductRuntimeError.textInsertionFailed("The focused target value could not be verified.")
+    }
+    let expectedValue = (valueBefore as NSString).replacingCharacters(
+        in: NSRange(location: selectedRange.location, length: selectedRange.length),
+        with: text
+    )
+
+    try postUnicodeKeyboardEvents(text)
 
     usleep(30_000)
-    var focusedValueAfter: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(
-        appElement,
-        kAXFocusedUIElementAttribute as CFString,
-        &focusedValueAfter
-    ) == .success, let focusedValueAfter else {
+    guard let focusedElementAfter = copyFocusedElement(appPID: appPID) else {
         throw ProductRuntimeError.textInsertionFailed("The focused target changed during insertion.")
     }
-    let focusedElementAfter = unsafeBitCast(focusedValueAfter, to: AXUIElement.self)
     guard CFEqual(focusedElementBefore, focusedElementAfter),
           copyStringAttribute(kAXValueAttribute as CFString, from: focusedElementAfter) == expectedValue else {
         throw ProductRuntimeError.textInsertionFailed("The inserted text could not be verified in the focused target.")
+    }
+}
+
+func insertWithOpaqueUnicodeKeyboardEvents(_ text: String, appPID: pid_t) throws {
+    guard currentFrontmostApp()?.processIdentifier == appPID else {
+        throw ProductRuntimeError.textInsertionFailed("The target application was not frontmost before insertion.")
+    }
+    try postUnicodeKeyboardEvents(text)
+    usleep(30_000)
+    guard currentFrontmostApp()?.processIdentifier == appPID else {
+        throw ProductRuntimeError.textInsertionFailed("The target application changed during insertion.")
     }
 }
 
@@ -1380,11 +1398,19 @@ func insertTextWithoutPasteboard(_ text: String, focus: FocusSnapshot?) throws -
     ) {
         return route
     }
-    guard allowsFallback else {
-        throw ProductRuntimeError.nonEditableTarget
+    if allowsFallback {
+        try insertWithUnicodeKeyboardEvents(text, appPID: pid)
+        return .unicodeKeyboardEvents
     }
-    try insertWithUnicodeKeyboardEvents(text, appPID: pid)
-    return .unicodeKeyboardEvents
+    if InsertionTargetPolicy.allowsOpaqueUnicodeKeyboardFallback(
+        bundleID: focus?.app?.bundleID,
+        editable: focus?.editable,
+        role: focus?.role
+    ) {
+        try insertWithOpaqueUnicodeKeyboardEvents(text, appPID: pid)
+        return .opaqueUnicodeKeyboardEvents
+    }
+    throw ProductRuntimeError.nonEditableTarget
 }
 
 func isProductFrontmost(_ focus: FocusSnapshot?) -> Bool {
@@ -1740,7 +1766,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         case .notDetermined: microphoneText = "Noch nicht angefragt"
         }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "0.2.0-alpha.2"
+            ?? "0.2.0-alpha.3"
         return MenuBarSnapshot(
             state: state,
             statusText: statusText,
