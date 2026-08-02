@@ -809,7 +809,7 @@ func runSuccessScenario(
     if response.gatedTranscriptionFeedback != nil {
         failureReasons.append("unexpected-gated-feedback")
     }
-    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(response.insertRoute ?? "") {
+    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents", "opaqueUnicodeKeyboardEvents"].contains(response.insertRoute ?? "") {
         failureReasons.append("unexpected-insert-route")
     }
     if response.insertSource != "transcription" {

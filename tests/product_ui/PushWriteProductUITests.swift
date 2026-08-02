@@ -12,7 +12,7 @@ enum PushWriteProductUITests {
             hotKeyText: "Control+Option+Command+P",
             accessibilityGranted: true,
             microphoneStatusText: "Noch nicht angefragt",
-            versionText: "0.2.0-alpha.2"
+            versionText: "0.2.0-alpha.3"
         )
         let refreshed = MenuBarSnapshot(
             state: .ready,
@@ -20,7 +20,7 @@ enum PushWriteProductUITests {
             hotKeyText: "Control+Option+Command+P",
             accessibilityGranted: true,
             microphoneStatusText: "Erlaubt",
-            versionText: "0.2.0-alpha.2"
+            versionText: "0.2.0-alpha.3"
         )
 
         let controller = PushWriteMenuBarController(initialSnapshot: initial)

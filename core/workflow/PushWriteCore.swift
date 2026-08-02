@@ -128,4 +128,12 @@ enum InsertionTargetPolicy {
     static func allowsUnicodeKeyboardFallback(editable: Bool?, role: String?) -> Bool {
         editable == true || keyboardEditableRoles.contains(role ?? "")
     }
+
+    static func allowsOpaqueUnicodeKeyboardFallback(
+        bundleID: String?,
+        editable: Bool?,
+        role: String?
+    ) -> Bool {
+        bundleID == "com.openai.codex" && editable == nil && role == nil
+    }
 }

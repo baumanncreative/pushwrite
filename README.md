@@ -2,7 +2,7 @@
 
 **Local voice input for macOS — Powered by Whisper**
 
-PushWrite `0.2.0-alpha.2` is a native menu-bar app for local push-to-talk dictation on Apple-Silicon Macs. Hold `Control + Option + Command + P`, speak, then release: PushWrite records locally, transcribes with the bundled `whisper.cpp` runtime and inserts the text into the focused editable field without placing transcript text on the general pasteboard.
+PushWrite `0.2.0-alpha.3` is a native menu-bar app for local push-to-talk dictation on Apple-Silicon Macs. Hold `Control + Option + Command + P`, speak, then release: PushWrite records locally, transcribes with the bundled `whisper.cpp` runtime and inserts the text into the focused editable field without placing transcript text on the general pasteboard.
 
 ## Alpha status
 
@@ -11,7 +11,7 @@ Implemented:
 - global press-and-hold hotkey
 - local microphone recording and local `whisper.cpp` transcription
 - multilingual `ggml-tiny` model with runtime SHA-256 verification
-- direct Accessibility insertion with Unicode keyboard-event fallback
+- direct Accessibility insertion with verified Unicode keyboard-event fallback and a focus-stable Codex compatibility route
 - protected-field, missing-focus and target-change guards
 - native menu-bar states, settings, permission guidance and app icon
 - automatic cleanup of audio and transcript work files
@@ -32,7 +32,7 @@ Intel Macs are not part of this Alpha because no `x86_64` runtime artifact was b
 
 The production path contains no network client or telemetry. Audio, model inference and insertion remain local. The transcript is never staged on `NSPasteboard.general`; Apple documents that the general pasteboard automatically participates in Universal Clipboard, so avoiding it is required for PushWrite's local-only guarantee. Normal logs redact text values. Temporary audio and transcript artifacts are deleted when a flow completes or the app exits.
 
-See [runtime architecture](docs/architecture/runtime-0.2.0-alpha.1.md), [permission model](docs/architecture/permission-model.md), [translation evaluation](docs/architecture/local-translation.md) and [security review](docs/security/0.2.0-alpha.2-security-review.md).
+See [runtime architecture](docs/architecture/runtime-0.2.0-alpha.1.md), [permission model](docs/architecture/permission-model.md), [translation evaluation](docs/architecture/local-translation.md) and [security review](docs/security/0.2.0-alpha.3-security-review.md).
 
 ## Build and test
 

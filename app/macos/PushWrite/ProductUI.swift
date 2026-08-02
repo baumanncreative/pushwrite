@@ -216,7 +216,7 @@ final class PushWriteSettingsWindowController: NSWindowController {
         translationCheckbox.state = .off
         translationCheckbox.isEnabled = false
         translationCheckbox.setAccessibilityHelp("Deaktiviert, da für diese Alpha keine freigabefähige lokale Übersetzungsengine integriert ist")
-        let translationNote = NSTextField(wrappingLabelWithString: "In 0.2.0-alpha.2 deaktiviert. Es wird kein Clipboard überwacht und kein Text an einen Dienst übertragen.")
+        let translationNote = NSTextField(wrappingLabelWithString: "In 0.2.0-alpha.3 deaktiviert. Es wird kein Clipboard überwacht und kein Text an einen Dienst übertragen.")
         translationNote.textColor = .secondaryLabelColor
 
         let stack = NSStackView(views: [
