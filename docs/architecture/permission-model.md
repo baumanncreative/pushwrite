@@ -2,7 +2,7 @@
 
 ## Microphone
 
-PushWrite checks `AVCaptureDevice.authorizationStatus(for: .audio)` when recording is requested. A first-use request is issued only at recording intent. Denied or restricted states produce local guidance and do not start a recorder. The bundle contains `NSMicrophoneUsageDescription`.
+PushWrite checks `AVCaptureDevice.authorizationStatus(for: .audio)` when recording is requested, whenever its menu opens and whenever the app becomes active again. A first-use request is issued at recording intent or when the user clicks the microphone row while the state is `notDetermined`. Denied or restricted states produce local guidance and do not start a recorder. The bundle contains `NSMicrophoneUsageDescription`.
 
 Apple requires explicit capture permission and a purpose string for microphone use: [Requesting authorization to capture and save media](https://developer.apple.com/documentation/avfoundation/requesting-authorization-to-capture-and-save-media).
 
@@ -22,4 +22,4 @@ Clipboard translation is off, cannot be enabled in this build and performs no cl
 
 ## Entitlements
 
-The direct-distribution build requests no code-signing entitlements. It uses a microphone purpose string and the normal TCC prompt. The hardened runtime is enabled during signing. No JIT, unsigned executable memory, library-validation exception, network, automation or sandbox exception is added.
+The direct-distribution build requests only `com.apple.security.device.audio-input`, which permits audio input while Hardened Runtime is enabled. It also uses a microphone purpose string and the normal TCC prompt. No JIT, unsigned executable memory, library-validation exception, network, automation or sandbox exception is added.

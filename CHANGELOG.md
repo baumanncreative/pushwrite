@@ -6,6 +6,15 @@ All notable changes are documented here.
 
 No unreleased changes.
 
+## [0.2.0-alpha.2] - 2026-08-02
+
+### Fixed
+
+- microphone permission status now refreshes whenever the menu opens or the app becomes active
+- clicking the microphone status requests access when macOS has not decided yet, and opens System Settings only after denial or restriction
+- real TCC status is no longer frozen in a process-local QA override after the permission callback
+- release signing now embeds the Hardened Runtime audio-input entitlement and install validation verifies it
+
 ## [0.2.0-alpha.1] - 2026-08-01
 
 ### Added

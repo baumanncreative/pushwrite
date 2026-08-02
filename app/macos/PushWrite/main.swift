@@ -1093,7 +1093,6 @@ func requestMicrophoneAccess(completion: @escaping (MicrophonePermissionStatus, 
         } else {
             resolvedStatus = currentMicrophonePermissionStatus()
         }
-        runtimeCurrentMicrophonePermissionStatusOverride = resolvedStatus
         completion(resolvedStatus, true)
     }
 }
@@ -1684,6 +1683,11 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        updateMenuBar()
+        try? writeState(running: true)
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         pollTimer?.invalidate()
         recordingWatchdog?.invalidate()
@@ -1701,8 +1705,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureMenuBar() {
         let controller = PushWriteMenuBarController(initialSnapshot: menuBarSnapshot())
+        controller.onRefreshSnapshot = { [weak self] in self?.menuBarSnapshot() }
         controller.onOpenAccessibilitySettings = { [weak self] in self?.openAccessibilitySettings() }
-        controller.onOpenMicrophoneSettings = { [weak self] in self?.openMicrophoneSettings() }
+        controller.onMicrophoneAction = { [weak self] in self?.handleMicrophonePermissionAction() }
         controller.onShowSettings = { [weak self] in self?.showSettings() }
         controller.onShowAbout = { [weak self] in self?.showAbout() }
         controller.onQuit = { NSApp.terminate(nil) }
@@ -1735,7 +1740,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         case .notDetermined: microphoneText = "Noch nicht angefragt"
         }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "0.2.0-alpha.1"
+            ?? "0.2.0-alpha.2"
         return MenuBarSnapshot(
             state: state,
             statusText: statusText,
@@ -1747,7 +1752,12 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateMenuBar() {
-        menuBarController?.update(menuBarSnapshot())
+        let snapshot = menuBarSnapshot()
+        menuBarController?.update(snapshot)
+        settingsWindowController?.updatePermissions(
+            accessibilityGranted: snapshot.accessibilityGranted,
+            microphoneStatus: snapshot.microphoneStatusText
+        )
     }
 
     private func showSettings() {
@@ -3943,6 +3953,29 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         NSWorkspace.shared.open(settingsURL)
+    }
+
+    private func handleMicrophonePermissionAction() {
+        switch currentMicrophonePermissionStatus() {
+        case .granted:
+            updateMenuBar()
+            try? writeState(running: true)
+        case .denied, .restricted:
+            openMicrophoneSettings()
+        case .notDetermined:
+            requestMicrophoneAccess { [weak self] permissionStatus, _ in
+                DispatchQueue.main.async {
+                    guard let self else {
+                        return
+                    }
+                    self.updateMenuBar()
+                    try? self.writeState(running: true)
+                    if let blockedReason = microphoneBlockedReason(for: permissionStatus) {
+                        self.presentMicrophonePermissionBlockedUI(blockedReason: blockedReason)
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 INFO_PLIST="$ROOT_DIR/app/macos/PushWrite/Info.plist"
+ENTITLEMENTS_PLIST="$ROOT_DIR/app/macos/PushWrite/PushWrite.entitlements"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")"
 OUTPUT_ROOT="${1:-$ROOT_DIR/build/releases}"
 RELEASE_DIR="${OUTPUT_ROOT:A}/PushWrite-${VERSION}"
@@ -27,7 +28,8 @@ ditto "$PRODUCT_BUILD_DIR/PushWrite.app" "$APP_PATH"
 if [[ -n "$SIGNING_IDENTITY" ]]; then
   codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" \
     "$APP_PATH/Contents/Resources/whisper/bin/whisper-cli"
-  codesign --force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP_PATH"
+  codesign --force --deep --options runtime --timestamp --entitlements "$ENTITLEMENTS_PLIST" \
+    --sign "$SIGNING_IDENTITY" "$APP_PATH"
 fi
 
 codesign --verify --deep --strict --verbose=4 "$APP_PATH"
@@ -65,9 +67,10 @@ fi
 )
 
 APP_CDHASH="$(codesign -dv --verbose=4 "$APP_PATH" 2>&1 | awk -F= '/^CDHash=/{print $2; exit}')"
+BUNDLE_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist")"
 cat > "$METADATA_PATH" <<METADATA
 version=$VERSION
-build=200001
+build=$BUNDLE_BUILD
 bundle_identifier=ch.baumanncreative.pushwrite
 architecture=arm64
 minimum_macos=13.0

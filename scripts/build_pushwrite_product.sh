@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE_DIR="$ROOT_DIR/app/macos/PushWrite"
 INFO_PLIST="$SOURCE_DIR/Info.plist"
+ENTITLEMENTS_PLIST="$SOURCE_DIR/PushWrite.entitlements"
 STABLE_OUTPUT_DIR="${ROOT_DIR}/build/pushwrite-product"
 DEFAULT_OUTPUT_DIR="${ROOT_DIR}/build/pushwrite-product-candidate"
 OUTPUT_DIR="${${1:-$DEFAULT_OUTPUT_DIR}:A}"
@@ -51,6 +52,10 @@ if [[ ! -f "$APP_ICON" ]]; then
     -o "$ICON_BUILDER"
   "$ICON_BUILDER" "$ASSETS_DIR/PushWrite.iconset" "$APP_ICON"
 fi
+if [[ ! -f "$ENTITLEMENTS_PLIST" ]]; then
+  echo "Missing app entitlements at $ENTITLEMENTS_PLIST" >&2
+  exit 1
+fi
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$WHISPER_BIN_DIR" "$WHISPER_MODELS_DIR" "$MODULE_CACHE_DIR"
@@ -80,7 +85,7 @@ cp "$ASSETS_DIR/model-manifest.json" "$WHISPER_RESOURCES_DIR/model-manifest.json
 cp "$APP_ICON" "$RESOURCES_DIR/PushWrite.icns"
 
 find "$APP_DIR/Contents/Resources/whisper/bin" -type f -perm -111 -exec codesign --force --options runtime --sign - {} \;
-codesign --force --options runtime --sign - "$APP_DIR"
+codesign --force --options runtime --entitlements "$ENTITLEMENTS_PLIST" --sign - "$APP_DIR"
 "$ROOT_DIR/scripts/inspect_pushwrite_product_identity.sh" "$APP_DIR" "$OUTPUT_DIR/build-identity.txt" >/dev/null
 
 printf '%s\n' "$APP_DIR"

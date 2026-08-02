@@ -34,6 +34,9 @@ $(codesign -dv --verbose=4 "$APP_PATH" 2>&1)
 
 [codesign -dr -]
 $(codesign -dr - "$APP_PATH" 2>&1)
+
+[codesign -d --entitlements :-]
+$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null)
 EOF
 )"
 
