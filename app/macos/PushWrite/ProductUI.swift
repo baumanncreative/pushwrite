@@ -18,8 +18,9 @@ struct MenuBarSnapshot {
 }
 
 final class PushWriteMenuBarController: NSObject, NSMenuDelegate {
+    var onRefreshSnapshot: (() -> MenuBarSnapshot?)?
     var onOpenAccessibilitySettings: (() -> Void)?
-    var onOpenMicrophoneSettings: (() -> Void)?
+    var onMicrophoneAction: (() -> Void)?
     var onShowSettings: (() -> Void)?
     var onShowAbout: (() -> Void)?
     var onQuit: (() -> Void)?
@@ -50,7 +51,7 @@ final class PushWriteMenuBarController: NSObject, NSMenuDelegate {
         accessibilityMenuItem.target = self
         accessibilityMenuItem.action = #selector(openAccessibilitySettings)
         microphoneMenuItem.target = self
-        microphoneMenuItem.action = #selector(openMicrophoneSettings)
+        microphoneMenuItem.action = #selector(handleMicrophoneAction)
 
         let settingsItem = NSMenuItem(title: "Einstellungen …", action: #selector(showSettings), keyEquivalent: ",")
         settingsItem.target = self
@@ -96,6 +97,13 @@ final class PushWriteMenuBarController: NSObject, NSMenuDelegate {
         statusItem.button?.setAccessibilityValue(snapshot.statusText)
     }
 
+    func menuWillOpen(_ menu: NSMenu) {
+        guard let refreshedSnapshot = onRefreshSnapshot?() else {
+            return
+        }
+        update(refreshedSnapshot)
+    }
+
     private func statusImage(for state: MenuBarPresentationState) -> NSImage? {
         let symbolName: String
         switch state {
@@ -123,8 +131,8 @@ final class PushWriteMenuBarController: NSObject, NSMenuDelegate {
         onOpenAccessibilitySettings?()
     }
 
-    @objc private func openMicrophoneSettings() {
-        onOpenMicrophoneSettings?()
+    @objc private func handleMicrophoneAction() {
+        onMicrophoneAction?()
     }
 
     @objc private func showSettings() {
@@ -146,6 +154,10 @@ final class PushWriteSettingsWindowController: NSWindowController {
     private let translationCheckbox = NSButton(checkboxWithTitle: "Kopierten Text lokal übersetzen", target: nil, action: nil)
 
     var onTranscriptionLanguageChanged: ((String) -> Void)?
+
+    func updatePermissions(accessibilityGranted: Bool, microphoneStatus: String) {
+        permissionLabel.stringValue = "Bedienungshilfen: \(accessibilityGranted ? "Erlaubt" : "Nicht erlaubt")\nMikrofon: \(microphoneStatus)"
+    }
 
     init(hotKeyText: String, accessibilityGranted: Bool, microphoneStatus: String, selectedLanguage: String) {
         let window = NSWindow(
@@ -204,7 +216,7 @@ final class PushWriteSettingsWindowController: NSWindowController {
         translationCheckbox.state = .off
         translationCheckbox.isEnabled = false
         translationCheckbox.setAccessibilityHelp("Deaktiviert, da für diese Alpha keine freigabefähige lokale Übersetzungsengine integriert ist")
-        let translationNote = NSTextField(wrappingLabelWithString: "In 0.2.0-alpha.1 deaktiviert. Es wird kein Clipboard überwacht und kein Text an einen Dienst übertragen.")
+        let translationNote = NSTextField(wrappingLabelWithString: "In 0.2.0-alpha.2 deaktiviert. Es wird kein Clipboard überwacht und kein Text an einen Dienst übertragen.")
         translationNote.textColor = .secondaryLabelColor
 
         let stack = NSStackView(views: [

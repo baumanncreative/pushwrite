@@ -18,6 +18,9 @@ jobs:
       - name: Unit tests
         run: ./scripts/run_pushwrite_unit_tests.sh
 
+      - name: Menu permission refresh test
+        run: ./scripts/run_pushwrite_ui_tests.sh
+
       - name: Build static whisper runtime
         run: ./scripts/build_whispercpp_minimal.sh
 
@@ -32,7 +35,8 @@ jobs:
             echo "whisper-cli contains a repository-local dynamic dependency" >&2
             exit 1
           fi
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /tmp/pushwrite-ci-product/PushWrite.app/Contents/Info.plist)" = "0.2.0-alpha.1"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /tmp/pushwrite-ci-product/PushWrite.app/Contents/Info.plist)" = "0.2.0-alpha.2"
+          test "$(codesign -d --entitlements :- /tmp/pushwrite-ci-product/PushWrite.app 2>/dev/null | plutil -extract 'com\.apple\.security\.device\.audio-input' raw -o - -)" = "true"
           shasum -a 256 -c app/macos/PushWrite/Assets/whisper-model.sha256
 
       - name: Check for common committed secrets

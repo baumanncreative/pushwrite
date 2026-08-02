@@ -137,6 +137,15 @@ if ! codesign --verify --deep --strict "$INSTALLED_APP_PATH"; then
   echo "Extracted release application failed code-signature verification: $INSTALLED_APP_PATH" >&2
   exit 1
 fi
+INSTALLED_AUDIO_INPUT_ENTITLEMENT="$(
+  codesign -d --entitlements :- "$INSTALLED_APP_PATH" 2>/dev/null \
+    | /usr/bin/plutil -extract 'com\.apple\.security\.device\.audio-input' raw -o - - 2>/dev/null \
+    || true
+)"
+if [[ "$INSTALLED_AUDIO_INPUT_ENTITLEMENT" != "true" ]]; then
+  echo "Extracted release application is missing com.apple.security.device.audio-input=true." >&2
+  exit 1
+fi
 EXPECTED_MODEL_SHA256="$(awk 'NF { print $1; exit }' "$ROOT_DIR/app/macos/PushWrite/Assets/whisper-model.sha256")"
 INSTALLED_MODEL_SHA256="$(shasum -a 256 "$INSTALLED_WHISPER_MODEL_PATH" | awk '{print $1}')"
 if [[ -z "$EXPECTED_MODEL_SHA256" || "$INSTALLED_MODEL_SHA256" != "$EXPECTED_MODEL_SHA256" ]]; then
