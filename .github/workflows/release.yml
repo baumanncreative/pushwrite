@@ -30,7 +30,10 @@ jobs:
             echo "Release v0.3.0 already exists; refusing to replace it." >&2
             exit 1
           fi
-          tag_sha="$(gh api repos/baumanncreative/pushwrite/git/ref/tags/v0.3.0 --jq '.object.sha' 2>/dev/null || true)"
+          tag_sha=""
+          if tag_ref="$(gh api repos/baumanncreative/pushwrite/git/ref/tags/v0.3.0 2>/dev/null)"; then
+            tag_sha="$(jq -r '.object.sha // empty' <<<"$tag_ref")"
+          fi
           if [[ -n "$tag_sha" && "$tag_sha" != "$GITHUB_SHA" ]]; then
             echo "Tag v0.3.0 already targets another commit: $tag_sha" >&2
             exit 1
@@ -133,7 +136,10 @@ jobs:
       - name: Publish immutable GitHub release
         run: |
           release_dir="build/releases/PushWrite-0.3.0-unsigned"
-          tag_sha="$(gh api repos/baumanncreative/pushwrite/git/ref/tags/v0.3.0 --jq '.object.sha' 2>/dev/null || true)"
+          tag_sha=""
+          if tag_ref="$(gh api repos/baumanncreative/pushwrite/git/ref/tags/v0.3.0 2>/dev/null)"; then
+            tag_sha="$(jq -r '.object.sha // empty' <<<"$tag_ref")"
+          fi
           if [[ -z "$tag_sha" ]]; then
             gh api --method POST repos/baumanncreative/pushwrite/git/refs \
               -f ref=refs/tags/v0.3.0 \
