@@ -4,6 +4,28 @@ import AppKit
 import Darwin
 import Foundation
 
+struct UnsafeValidationScratchPath: Error, CustomStringConvertible {
+    let path: String
+    let repoRoot: String
+
+    var description: String {
+        "Validation scratch paths must be dedicated directories under /tmp or \(repoRoot)/build: \(path)"
+    }
+}
+
+func checkedValidationScratchPath(_ path: String, repoRoot: String) throws -> String {
+    let canonicalPath = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    let canonicalRepoRoot = URL(fileURLWithPath: repoRoot).standardizedFileURL.resolvingSymlinksInPath().path
+    let allowedPrefixes = ["/private/tmp/", "/tmp/", "\(canonicalRepoRoot)/build/"]
+    guard allowedPrefixes.contains(where: canonicalPath.hasPrefix) else {
+        throw UnsafeValidationScratchPath(path: canonicalPath, repoRoot: canonicalRepoRoot)
+    }
+    guard !FileManager.default.fileExists(atPath: canonicalPath) else {
+        throw UnsafeValidationScratchPath(path: canonicalPath, repoRoot: canonicalRepoRoot)
+    }
+    return canonicalPath
+}
+
 struct Options {
     var productOutputDir = ""
     var productAppPath: String?
@@ -409,7 +431,7 @@ func stableProductAppPath(repoRoot: String) -> String {
 }
 
 func candidateProductOutputDir(repoRoot: String) -> String {
-    "\(repoRoot)/build/pushwrite-product-candidate"
+    "\(repoRoot)/build/pushwrite-product-qa-candidate"
 }
 
 func defaultWhisperCLIPath(repoRoot: String) -> String {
@@ -417,7 +439,7 @@ func defaultWhisperCLIPath(repoRoot: String) -> String {
 }
 
 func defaultWhisperModelPath(repoRoot: String) -> String {
-    "\(repoRoot)/models/ggml-tiny.bin"
+    "\(repoRoot)/models/ggml-large-v3-q5_0.bin"
 }
 
 func defaultTranscriptionFixtureWAVPath(repoRoot: String) -> String {
@@ -426,7 +448,7 @@ func defaultTranscriptionFixtureWAVPath(repoRoot: String) -> String {
 
 func buildProduct(repoRoot: String, outputDir: String) throws -> URL {
     let scriptPath = "\(repoRoot)/scripts/build_pushwrite_product.sh"
-    let output = try runProcess("/bin/zsh", arguments: [scriptPath, outputDir], currentDirectory: repoRoot)
+    let output = try runProcess("/bin/zsh", arguments: [scriptPath, outputDir, "--qa"], currentDirectory: repoRoot)
     let appPath = output.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !appPath.isEmpty else {
         throw ValidationError.buildFailed("Build script did not return an app path.")
@@ -443,13 +465,8 @@ func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
         return url
     }
 
-    let stableURL = URL(fileURLWithPath: stableProductAppPath(repoRoot: repoRoot))
-    if FileManager.default.fileExists(atPath: stableURL.path) {
-        return stableURL
-    }
-
     if options.skipBuild {
-        throw ValidationError.controlFailed("Missing stable product app at \(stableURL.path)")
+        throw ValidationError.controlFailed("QA validation with --skip-build requires --product-app-path.")
     }
 
     let outputDir = options.productOutputDir.isEmpty ? candidateProductOutputDir(repoRoot: repoRoot) : options.productOutputDir
@@ -521,6 +538,8 @@ func launchProduct(
     var environment = ProcessInfo.processInfo.environment
     environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] = "1"
     environment["PUSHWRITE_INCLUDE_SENSITIVE_TEST_ARTIFACTS"] = "1"
+    environment["PUSHWRITE_INPUT_LANGUAGE"] = whisperLanguage ?? "en"
+    environment["PUSHWRITE_OUTPUT_LANGUAGE"] = whisperLanguage ?? "en"
     if whisperModelPath?.contains("missing") == true {
         environment["PUSHWRITE_ALLOW_TEST_RUNTIME_OVERRIDE"] = "1"
     }
@@ -546,17 +565,14 @@ func readState(runtimeDir: String) throws -> ProductState {
 }
 
 func stopProduct(repoRoot: String, productAppPath: String, runtimeDir: String) {
-    let scriptPath = "\(repoRoot)/scripts/control_pushwrite_product.sh"
-    _ = try? runProcess(
-        "/bin/zsh",
-        arguments: [scriptPath, "stop", "--timeout-ms", "5000", "--product-app", productAppPath, "--runtime-dir", runtimeDir],
-        currentDirectory: repoRoot
-    )
+    _ = repoRoot
+    _ = runtimeDir
+    cleanupRunningProductProcesses(productAppPath: productAppPath)
 }
 
 func cleanupRunningProductProcesses(productAppPath: String) {
     _ = productAppPath
-    let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite")
+    let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite.qa")
     for application in applications {
         application.terminate()
     }
@@ -582,9 +598,8 @@ func ensureTextEditReady() throws {
     _ = try runAppleScript("""
     tell application "TextEdit"
       activate
-      if not (exists document 1) then
-        make new document
-      end if
+      close every document saving no
+      make new document
       set text of document 1 to ""
     end tell
     """)
@@ -739,7 +754,9 @@ func runScenario(
     expectRecordingArtifact: Bool,
     expectNonEmptyTranscriptText: Bool = false
 ) throws -> ScenarioSummary {
-    try? FileManager.default.removeItem(atPath: runtimeDir)
+    guard !FileManager.default.fileExists(atPath: runtimeDir) else {
+        throw UnsafeValidationScratchPath(path: runtimeDir, repoRoot: repoRoot)
+    }
 
     let launchState = try launchProduct(
         productAppPath: productAppPath,
@@ -857,11 +874,11 @@ func runScenario(
                 failureReasons.append("missing-transcription-artifact-file")
             }
             if expectedTranscriptionStatus == .succeeded {
-                if !transcriptionTextFileExists {
-                    failureReasons.append("missing-transcription-text-file")
+                if transcriptionTextFileExists {
+                    failureReasons.append("unexpected-transcription-text-file")
                 }
-                if !transcriptionRawJSONFileExists {
-                    failureReasons.append("missing-transcription-raw-json")
+                if transcriptionRawJSONFileExists {
+                    failureReasons.append("unexpected-transcription-raw-json")
                 }
             }
             if expectNonEmptyTranscriptText, (hotKeyResponse.transcriptionArtifact?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false) {
@@ -974,6 +991,7 @@ func skippedScenario(name: String, runtimeDir: String, launchState: ProductState
 
 func main() -> Int32 {
     let repoRoot = FileManager.default.currentDirectoryPath
+    let validationRunID = UUID().uuidString.lowercased()
     var options: Options
     do {
         options = try parseOptions(arguments: Array(CommandLine.arguments.dropFirst()))
@@ -983,28 +1001,43 @@ func main() -> Int32 {
     }
 
     if options.successRuntimeDir.isEmpty {
-        options.successRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-allowed"
+        options.successRuntimeDir = "\(repoRoot)/build/validation/runtime-003a-mic-allowed-\(validationRunID)"
     }
     if options.blockedRuntimeDir.isEmpty {
-        options.blockedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-accessibility-blocked"
+        options.blockedRuntimeDir = "\(repoRoot)/build/validation/runtime-003a-accessibility-blocked-\(validationRunID)"
     }
     if options.promptAllowRuntimeDir.isEmpty {
-        options.promptAllowRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-prompt-allow"
+        options.promptAllowRuntimeDir = "\(repoRoot)/build/validation/runtime-003a-mic-prompt-allow-\(validationRunID)"
     }
     if options.promptDenyRuntimeDir.isEmpty {
-        options.promptDenyRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-prompt-deny"
+        options.promptDenyRuntimeDir = "\(repoRoot)/build/validation/runtime-003a-mic-prompt-deny-\(validationRunID)"
     }
     if options.deniedRuntimeDir.isEmpty {
-        options.deniedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-previously-denied"
+        options.deniedRuntimeDir = "\(repoRoot)/build/validation/runtime-003a-mic-previously-denied-\(validationRunID)"
     }
     if options.noMicrophoneRuntimeDir.isEmpty {
-        options.noMicrophoneRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-no-device"
+        options.noMicrophoneRuntimeDir = "\(repoRoot)/build/validation/runtime-003a-mic-no-device-\(validationRunID)"
     }
     if options.recorderFailureRuntimeDir.isEmpty {
-        options.recorderFailureRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-mic-recorder-failed"
+        options.recorderFailureRuntimeDir = "\(repoRoot)/build/validation/runtime-003a-mic-recorder-failed-\(validationRunID)"
     }
     if options.inferenceFailureRuntimeDir.isEmpty {
-        options.inferenceFailureRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-003a-inference-failure"
+        options.inferenceFailureRuntimeDir = "\(repoRoot)/build/validation/runtime-003a-inference-failure-\(validationRunID)"
+    }
+    var promptBaselineRuntimeDir = "\(options.successRuntimeDir)-baseline"
+    do {
+        options.successRuntimeDir = try checkedValidationScratchPath(options.successRuntimeDir, repoRoot: repoRoot)
+        promptBaselineRuntimeDir = try checkedValidationScratchPath(promptBaselineRuntimeDir, repoRoot: repoRoot)
+        options.blockedRuntimeDir = try checkedValidationScratchPath(options.blockedRuntimeDir, repoRoot: repoRoot)
+        options.promptAllowRuntimeDir = try checkedValidationScratchPath(options.promptAllowRuntimeDir, repoRoot: repoRoot)
+        options.promptDenyRuntimeDir = try checkedValidationScratchPath(options.promptDenyRuntimeDir, repoRoot: repoRoot)
+        options.deniedRuntimeDir = try checkedValidationScratchPath(options.deniedRuntimeDir, repoRoot: repoRoot)
+        options.noMicrophoneRuntimeDir = try checkedValidationScratchPath(options.noMicrophoneRuntimeDir, repoRoot: repoRoot)
+        options.recorderFailureRuntimeDir = try checkedValidationScratchPath(options.recorderFailureRuntimeDir, repoRoot: repoRoot)
+        options.inferenceFailureRuntimeDir = try checkedValidationScratchPath(options.inferenceFailureRuntimeDir, repoRoot: repoRoot)
+    } catch {
+        fputs("\(error)\n", stderr)
+        return 64
     }
 
     let productAppURL: URL
@@ -1047,10 +1080,9 @@ func main() -> Int32 {
 
     let promptLaunchState: ProductState
     do {
-        try? FileManager.default.removeItem(atPath: options.successRuntimeDir)
         promptLaunchState = try launchProduct(
             productAppPath: productAppURL.path,
-            runtimeDir: options.successRuntimeDir,
+            runtimeDir: promptBaselineRuntimeDir,
             whisperCLIPath: whisperCLIPath,
             whisperModelPath: whisperModelPath,
             whisperLanguage: options.whisperLanguage,
@@ -1067,8 +1099,8 @@ func main() -> Int32 {
 
     let promptValidation = PromptValidationSummary(
         launchMicrophonePermissionStatus: promptLaunchState.microphonePermissionStatus,
-        launchCreatedRecordingArtifacts: launchArtifactExists(runtimeDir: options.successRuntimeDir),
-        launchCreatedHotKeyResponse: (try? readLastHotKeyResponse(runtimeDir: options.successRuntimeDir)) != nil,
+        launchCreatedRecordingArtifacts: launchArtifactExists(runtimeDir: promptBaselineRuntimeDir),
+        launchCreatedHotKeyResponse: (try? readLastHotKeyResponse(runtimeDir: promptBaselineRuntimeDir)) != nil,
         bundleMicrophoneUsageDescription: usageDescription,
         bundleHasMicrophoneUsageDescription: usageDescription != nil,
         firstPromptObservedInThisRun: false,
@@ -1084,7 +1116,7 @@ func main() -> Int32 {
             ]
     )
 
-    stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.successRuntimeDir)
+    stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: promptBaselineRuntimeDir)
 
     let micAllowedScenario: ScenarioSummary
     do {
@@ -1372,6 +1404,23 @@ func main() -> Int32 {
         return 1
     }
 
+    let scenarios = [
+        micAllowedScenario,
+        micNotDeterminedAllowScenario,
+        micNotDeterminedDenyScenario,
+        inferenceFailureScenario,
+        blockedScenario,
+        deniedScenario,
+        noMicrophoneScenario,
+        recorderFailureScenario,
+    ]
+    let promptValidationPassed = promptValidation.bundleHasMicrophoneUsageDescription
+        && !promptValidation.launchCreatedRecordingArtifacts
+        && !promptValidation.launchCreatedHotKeyResponse
+    guard promptValidationPassed, scenarios.allSatisfy(\.success) else {
+        fputs("Recording validation reported one or more failed scenarios.\n", stderr)
+        return 1
+    }
     return 0
 }
 

@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PRODUCT_APP_PATH="$ROOT_DIR/build/pushwrite-product/PushWrite.app"
-RUNTIME_ROOT="/tmp/pushwrite-app-compatibility"
+RUNTIME_ROOT=""
 RESULTS_FILE="$ROOT_DIR/build/pushwrite-product/app-compatibility-results.json"
 TEXTEDIT_RUNS=5
 SAFARI_RUNS=5
@@ -13,13 +13,13 @@ usage() {
   cat <<USAGE
 Usage: scripts/run_pushwrite_app_compatibility_test.sh [options]
 
-Runs the supported alpha compatibility matrix against native TextEdit and a
+Runs the supported release compatibility matrix against native TextEdit and a
 local Safari textarea fixture. Each run verifies target focus, inserted text,
 pasteboard preservation, and the pasteboard-free insertion route.
 
 Options:
   --product-app-path <path>  App bundle to validate
-  --runtime-root <path>      Runtime root (default: /tmp/pushwrite-app-compatibility)
+  --runtime-root <path>      New scratch runtime root (default: unique directory under /tmp)
   --results-file <path>      JSON result path
   --textedit-runs <count>    TextEdit repetitions (default: 5)
   --safari-runs <count>      Safari repetitions (default: 5)
@@ -62,8 +62,26 @@ while [[ $# -gt 0 ]]; do
 done
 
 PRODUCT_APP_PATH="${PRODUCT_APP_PATH:A}"
-RUNTIME_ROOT="${RUNTIME_ROOT:A}"
 RESULTS_FILE="${RESULTS_FILE:A}"
+
+if [[ -z "$RUNTIME_ROOT" ]]; then
+  RUNTIME_ROOT="$(mktemp -d /tmp/pushwrite-app-compatibility.XXXXXXXX)"
+elif [[ -e "$RUNTIME_ROOT" || -L "$RUNTIME_ROOT" ]]; then
+  echo "Runtime root must not already exist: $RUNTIME_ROOT" >&2
+  exit 64
+else
+  mkdir -m 700 -p "$RUNTIME_ROOT"
+  RUNTIME_ROOT="${RUNTIME_ROOT:A}"
+fi
+
+case "$RUNTIME_ROOT" in
+  /tmp/*|/private/tmp/*|"${ROOT_DIR:A}"/build/*)
+    ;;
+  *)
+    echo "Runtime root must be a dedicated scratch directory under /tmp or ${ROOT_DIR:A}/build: $RUNTIME_ROOT" >&2
+    exit 64
+    ;;
+esac
 
 if [[ "$TEXTEDIT_RUNS" != <-> || "$SAFARI_RUNS" != <-> ]]; then
   echo "Run counts must be non-negative integers." >&2
@@ -71,10 +89,9 @@ if [[ "$TEXTEDIT_RUNS" != <-> || "$SAFARI_RUNS" != <-> ]]; then
 fi
 
 if [[ ! -d "$PRODUCT_APP_PATH" ]]; then
-  "$ROOT_DIR/scripts/build_pushwrite_product.sh" "${PRODUCT_APP_PATH:h}"
+  "$ROOT_DIR/scripts/build_pushwrite_product.sh" "${PRODUCT_APP_PATH:h}" --qa
 fi
 
-rm -rf "$RUNTIME_ROOT"
 mkdir -p "${RESULTS_FILE:h}"
 
 "$ROOT_DIR/scripts/control_pushwrite_product.sh" \

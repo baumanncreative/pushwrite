@@ -1,4 +1,10 @@
-# 002C Results: Product-Like Paste Insert Agent
+# 002C Results: Product-Like Paste Insert Agent (eingestellt)
+
+> Historischer Versuch. Der separate Accessibility-Agent samt Controller,
+> Builder und Validator wurde vor 0.3.0 entfernt, weil sein dateibasiertes
+> Request-Spool gleichberechtigte Prozesse desselben macOS-Benutzers nicht
+> sicher authentisieren konnte. Das Produkt verwendet die direkte,
+> fokusgebundene AX-Einfügung.
 
 ## Ziel und Scope
 

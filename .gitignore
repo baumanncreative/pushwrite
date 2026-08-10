@@ -26,6 +26,24 @@ out/
 coverage/
 tmp/
 *.log
+models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+models/qwen2.5-1.5b-instruct-q4_k_m.gguf.partial
+models/Qwen2.5-LICENSE.txt
+models/local-text-model.sha256
+models/local-text-license.sha256
+models/ggml-large-v3-turbo-q5_0.bin
+models/ggml-large-v3-turbo-q5_0.bin.partial
+models/ggml-large-v3-q5_0.bin
+models/ggml-large-v3-q5_0.bin.partial
+
+# llama.cpp source areas not required by the pinned llama-completion build
+third_party/llama.cpp/benches/
+third_party/llama.cpp/conversion/
+third_party/llama.cpp/docs/
+third_party/llama.cpp/examples/
+third_party/llama.cpp/media/
+third_party/llama.cpp/models/
+third_party/llama.cpp/tests/
 
 # Editors
 .vscode/

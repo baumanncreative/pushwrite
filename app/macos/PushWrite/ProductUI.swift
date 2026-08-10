@@ -1,6 +1,21 @@
 import AppKit
 import Foundation
 
+enum LanguageSettingsCatalog {
+    static let inputTitles = [
+        "Automatisch erkennen",
+        "Deutsch (Deutschland)",
+        "Deutsch (Österreich)",
+        "Deutsch (Schweiz / Schweizerdeutsch)",
+        "Englisch",
+        "Spanisch",
+        "Französisch",
+    ]
+    static let inputValues = ["auto", "de-DE", "de-AT", "de-CH", "en", "es", "fr"]
+    static let outputTitles = ["System", "Deutsch", "Englisch", "Spanisch", "Französisch"]
+    static let outputValues = ["system", "de", "en", "es", "fr"]
+}
+
 enum MenuBarPresentationState {
     case ready
     case recording
@@ -89,7 +104,7 @@ final class PushWriteMenuBarController: NSObject, NSMenuDelegate {
             ? "Bedienungshilfen: Erlaubt"
             : "Bedienungshilfen: Öffnen …"
         microphoneMenuItem.title = "Mikrofon: \(snapshot.microphoneStatusText)"
-        translationMenuItem.title = "Lokale Übersetzung: In dieser Alpha deaktiviert"
+        translationMenuItem.title = "Lokale Textverarbeitung: Aktiv (offline)"
 
         let image = statusImage(for: snapshot.state)
         statusItem.button?.image = image
@@ -150,18 +165,25 @@ final class PushWriteMenuBarController: NSObject, NSMenuDelegate {
 
 final class PushWriteSettingsWindowController: NSWindowController {
     private let permissionLabel = NSTextField(wrappingLabelWithString: "")
-    private let transcriptionLanguagePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let translationCheckbox = NSButton(checkboxWithTitle: "Kopierten Text lokal übersetzen", target: nil, action: nil)
+    private let inputLanguagePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let outputLanguagePopup = NSPopUpButton(frame: .zero, pullsDown: false)
 
-    var onTranscriptionLanguageChanged: ((String) -> Void)?
+    var onInputLanguageChanged: ((String) -> Void)?
+    var onOutputLanguageChanged: ((String) -> Void)?
 
     func updatePermissions(accessibilityGranted: Bool, microphoneStatus: String) {
         permissionLabel.stringValue = "Bedienungshilfen: \(accessibilityGranted ? "Erlaubt" : "Nicht erlaubt")\nMikrofon: \(microphoneStatus)"
     }
 
-    init(hotKeyText: String, accessibilityGranted: Bool, microphoneStatus: String, selectedLanguage: String) {
+    init(
+        hotKeyText: String,
+        accessibilityGranted: Bool,
+        microphoneStatus: String,
+        selectedInputLanguage: String,
+        selectedOutputLanguage: String
+    ) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 440),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -175,7 +197,8 @@ final class PushWriteSettingsWindowController: NSWindowController {
             hotKeyText: hotKeyText,
             accessibilityGranted: accessibilityGranted,
             microphoneStatus: microphoneStatus,
-            selectedLanguage: selectedLanguage
+            selectedInputLanguage: selectedInputLanguage,
+            selectedOutputLanguage: selectedOutputLanguage
         )
     }
 
@@ -188,7 +211,8 @@ final class PushWriteSettingsWindowController: NSWindowController {
         hotKeyText: String,
         accessibilityGranted: Bool,
         microphoneStatus: String,
-        selectedLanguage: String
+        selectedInputLanguage: String,
+        selectedOutputLanguage: String
     ) {
         guard let contentView = window?.contentView else {
             return
@@ -204,19 +228,28 @@ final class PushWriteSettingsWindowController: NSWindowController {
         permissionLabel.stringValue = "Bedienungshilfen: \(accessibilityGranted ? "Erlaubt" : "Nicht erlaubt")\nMikrofon: \(microphoneStatus)"
         permissionLabel.setAccessibilityLabel("Berechtigungsstatus")
 
-        let languageLabel = NSTextField(labelWithString: "Transkriptionssprache")
-        transcriptionLanguagePopup.addItems(withTitles: ["Automatisch", "Deutsch", "Englisch"])
-        transcriptionLanguagePopup.selectItem(at: ["auto": 0, "de": 1, "en": 2][selectedLanguage] ?? 0)
-        transcriptionLanguagePopup.target = self
-        transcriptionLanguagePopup.action = #selector(languageChanged)
-        transcriptionLanguagePopup.setAccessibilityLabel("Transkriptionssprache")
+        let inputLanguageLabel = NSTextField(labelWithString: "Gesprochene Sprache")
+        inputLanguagePopup.addItems(withTitles: LanguageSettingsCatalog.inputTitles)
+        inputLanguagePopup.selectItem(
+            at: LanguageSettingsCatalog.inputValues.firstIndex(of: selectedInputLanguage) ?? 0
+        )
+        inputLanguagePopup.target = self
+        inputLanguagePopup.action = #selector(inputLanguageChanged)
+        inputLanguagePopup.setAccessibilityLabel("Gesprochene Sprache")
 
-        let translationTitle = NSTextField(labelWithString: "Lokale Clipboard-Übersetzung")
+        let outputLanguageLabel = NSTextField(labelWithString: "Ausgabesprache")
+        outputLanguagePopup.addItems(withTitles: LanguageSettingsCatalog.outputTitles)
+        let migratedOutputLanguage = selectedOutputLanguage == "auto" ? "system" : selectedOutputLanguage
+        outputLanguagePopup.selectItem(
+            at: LanguageSettingsCatalog.outputValues.firstIndex(of: migratedOutputLanguage) ?? 0
+        )
+        outputLanguagePopup.target = self
+        outputLanguagePopup.action = #selector(outputLanguageChanged)
+        outputLanguagePopup.setAccessibilityLabel("Ausgabesprache")
+
+        let translationTitle = NSTextField(labelWithString: "Lokale Sprachverarbeitung")
         translationTitle.font = .systemFont(ofSize: 15, weight: .semibold)
-        translationCheckbox.state = .off
-        translationCheckbox.isEnabled = false
-        translationCheckbox.setAccessibilityHelp("Deaktiviert, da für diese Alpha keine freigabefähige lokale Übersetzungsengine integriert ist")
-        let translationNote = NSTextField(wrappingLabelWithString: "In 0.2.0-alpha.3 deaktiviert. Es wird kein Clipboard überwacht und kein Text an einen Dienst übertragen.")
+        let translationNote = NSTextField(wrappingLabelWithString: "Erkennung, Schweizerdeutsch-Normalisierung und Übersetzung laufen vollständig lokal. Audio und Text werden nicht übertragen; nach der Installation ist keine Netzwerkverbindung erforderlich.")
         translationNote.textColor = .secondaryLabelColor
 
         let stack = NSStackView(views: [
@@ -224,10 +257,11 @@ final class PushWriteSettingsWindowController: NSWindowController {
             claim,
             hotKey,
             permissionLabel,
-            languageLabel,
-            transcriptionLanguagePopup,
+            inputLanguageLabel,
+            inputLanguagePopup,
+            outputLanguageLabel,
+            outputLanguagePopup,
             translationTitle,
-            translationCheckbox,
             translationNote,
         ])
         stack.orientation = .vertical
@@ -241,13 +275,24 @@ final class PushWriteSettingsWindowController: NSWindowController {
             stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -28),
             stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 24),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -24),
-            transcriptionLanguagePopup.widthAnchor.constraint(equalToConstant: 220),
+            inputLanguagePopup.widthAnchor.constraint(equalToConstant: 310),
+            outputLanguagePopup.widthAnchor.constraint(equalToConstant: 220),
         ])
     }
 
-    @objc private func languageChanged() {
-        let values = ["auto", "de", "en"]
-        let index = max(0, min(transcriptionLanguagePopup.indexOfSelectedItem, values.count - 1))
-        onTranscriptionLanguageChanged?(values[index])
+    @objc private func inputLanguageChanged() {
+        let index = max(
+            0,
+            min(inputLanguagePopup.indexOfSelectedItem, LanguageSettingsCatalog.inputValues.count - 1)
+        )
+        onInputLanguageChanged?(LanguageSettingsCatalog.inputValues[index])
+    }
+
+    @objc private func outputLanguageChanged() {
+        let index = max(
+            0,
+            min(outputLanguagePopup.indexOfSelectedItem, LanguageSettingsCatalog.outputValues.count - 1)
+        )
+        onOutputLanguageChanged?(LanguageSettingsCatalog.outputValues[index])
     }
 }

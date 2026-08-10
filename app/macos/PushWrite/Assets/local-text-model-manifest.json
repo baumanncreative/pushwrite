@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "model": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+  "family": "Qwen2.5 1.5B Instruct",
+  "quantization": "Q4_K_M",
+  "runtime": "llama.cpp b10227",
+  "source": "https://registry.ollama.ai/v2/library/qwen2.5/manifests/1.5b",
+  "upstream": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+  "sha256": "183715c435899236895da3869489cc30ac241476b4971a20285b1a462818a5b4",
+  "sizeBytes": 986048512,
+  "license": "Apache-2.0"
+}
