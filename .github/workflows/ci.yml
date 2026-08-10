@@ -30,6 +30,29 @@ jobs:
       - name: Fetch verified Whisper model
         run: ./scripts/fetch_whisper_model.sh
 
+      - name: Install verified Kitware CMake
+        run: |
+          cmake_archive="$RUNNER_TEMP/cmake-4.4.2-macos-universal.tar.gz"
+          cmake_root="$RUNNER_TEMP/cmake-4.4.2"
+          curl -fL --proto '=https' --max-time 180 --max-filesize 200000000 \
+            https://github.com/Kitware/CMake/releases/download/v4.4.2/cmake-4.4.2-macos-universal.tar.gz \
+            -o "$cmake_archive"
+          echo '800fc86838e913fff969b499886c80baeb4ccfd00f0e39906b34aa334f39ab6c  '"$cmake_archive" \
+            | shasum -a 256 -c -
+          mkdir -p "$cmake_root"
+          tar -xzf "$cmake_archive" -C "$cmake_root" --strip-components=1
+          cmake_bin="$cmake_root/CMake.app/Contents/bin/cmake"
+          test ! -L "$cmake_bin"
+          test -f "$cmake_bin"
+          test -x "$cmake_bin"
+          codesign --verify --strict \
+            -R='identifier "cmake" and anchor apple generic and certificate leaf[subject.OU] = "W38PE5Y733"' \
+            "$cmake_bin"
+          echo 'ac294d13ed00a648ffbb38c5753a26fc873b3317555dbc3d02a5354e0bcd8bf2  '"$cmake_bin" \
+            | shasum -a 256 -c -
+          echo "PUSHWRITE_CMAKE_BIN=$cmake_bin" >> "$GITHUB_ENV"
+          echo "PUSHWRITE_CMAKE_SHA256=ac294d13ed00a648ffbb38c5753a26fc873b3317555dbc3d02a5354e0bcd8bf2" >> "$GITHUB_ENV"
+
       - name: Build static whisper runtime
         run: ./scripts/build_whispercpp_minimal.sh
 
