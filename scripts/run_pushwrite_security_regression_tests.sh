@@ -119,6 +119,15 @@ if [[ -e "$SCRATCH_ROOT/release-must-not-exist" ]]; then
   echo "Stable release builder created output before authenticating release configuration." >&2
   exit 1
 fi
+if env -u PUSHWRITE_ACKNOWLEDGE_UNSIGNED_RELEASE \
+  "$ROOT_DIR/scripts/build_pushwrite_unsigned_release.sh" "$SCRATCH_ROOT/unsigned-must-not-exist" >/dev/null 2>&1; then
+  echo "Unsigned release builder accepted publication without explicit acknowledgement." >&2
+  exit 1
+fi
+if [[ -e "$SCRATCH_ROOT/unsigned-must-not-exist" ]]; then
+  echo "Unsigned release builder created output before explicit acknowledgement." >&2
+  exit 1
+fi
 
 if ! /usr/bin/strings "$PRODUCTION_BINARY" | /usr/bin/grep -F '(deny network*) (deny file-write*) (allow file-write-data)' >/dev/null; then
   echo "Production child runtimes are missing network and file-write sandbox denial." >&2

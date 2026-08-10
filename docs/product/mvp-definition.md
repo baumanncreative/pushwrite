@@ -31,7 +31,7 @@ On an Apple-Silicon Mac running macOS 13 or newer, a user can install PushWrite,
 - routine artifacts and logs do not retain content
 - static runtime/model bundle requires no development tools after install
 - DMG and ZIP plus SHA-256 checksums are produced
-- signing/notarization is executed when credentials exist and exactly blocked otherwise
+- authenticated public distribution uses either Developer ID signing/notarization or an explicitly unsigned GitHub Actions build with Sigstore provenance, immutable release assets and documented Gatekeeper override; raw local product output remains blocked from publication
 
 ## Optional translation gate
 

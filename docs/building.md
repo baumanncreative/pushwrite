@@ -45,6 +45,15 @@ The app builder refuses to write directly into the stable QA bundle path. Promot
 
 ## Release package
 
+Explicit GitHub direct-download release without Apple Developer ID:
+
+```sh
+export PUSHWRITE_ACKNOWLEDGE_UNSIGNED_RELEASE=YES
+./scripts/build_pushwrite_unsigned_release.sh
+```
+
+This path preserves the stable `0.3.0` application version, creates clearly suffixed `-unsigned` ZIP and DMG assets, verifies the ad-hoc code structure and bundled payload, validates both archives and launch, enforces GitHub's per-asset size limit, and records `notarized=false` in the release metadata. It refuses to create output unless the unnotarized distribution is explicitly acknowledged. Public artifacts are built by `.github/workflows/release.yml`, receive GitHub Actions/Sigstore build-provenance attestations and must be published with repository release immutability enabled.
+
 Stable Developer ID release:
 
 ```sh
@@ -56,6 +65,6 @@ export PUSHWRITE_TEAM_ID="TEAMID1234"
 
 The named keychain profile must be created outside the repository with `xcrun notarytool store-credentials`. Never place credentials in scripts or Git.
 
-The stable release script refuses missing credentials. It signs the nested CLIs before compiling their pinned hashes into the app, enables hardened runtime, verifies the exact Team ID, rejects repository-local dynamic dependencies, notarizes and staples the app and DMG, assesses both with Gatekeeper, and emits ZIP/DMG SHA-256 sums plus metadata. `build_pushwrite_product.sh` may still create an ad-hoc development app, but that output is not publishable.
+The authenticated release script refuses missing credentials. It signs the nested CLIs before compiling their pinned hashes into the app, enables hardened runtime, verifies the exact Team ID, rejects repository-local dynamic dependencies, notarizes and staples the app and DMG, assesses both with Gatekeeper, and emits ZIP/DMG SHA-256 sums plus metadata. `build_pushwrite_product.sh` may still create an ad-hoc development app, but its raw output is not publishable.
 
 Apple requires Developer ID, hardened runtime and secure timestamps for notarization: [Notarizing macOS software](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
