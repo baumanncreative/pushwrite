@@ -166,6 +166,7 @@ INSTALLED_WHISPER_CLI_PATH="$INSTALLED_APP_PATH/Contents/Resources/whisper/bin/w
 INSTALLED_WHISPER_MODEL_PATH="$INSTALLED_APP_PATH/Contents/Resources/whisper/models/ggml-large-v3-q5_0.bin"
 INSTALLED_LOCAL_TEXT_CLI_PATH="$INSTALLED_APP_PATH/Contents/Resources/local-text/bin/llama-completion"
 INSTALLED_LOCAL_TEXT_MODEL_PATH="$INSTALLED_APP_PATH/Contents/Resources/local-text/models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+INSTALLED_APP_ICON_PATH="$INSTALLED_APP_PATH/Contents/Resources/PushWrite.icns"
 
 if [[ "$INSTALLED_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ||
       "$INSTALLED_EXECUTABLE" != "$EXPECTED_EXECUTABLE" ||
@@ -182,6 +183,7 @@ done
 for payload in \
   "$INSTALLED_WHISPER_MODEL_PATH" \
   "$INSTALLED_LOCAL_TEXT_MODEL_PATH" \
+  "$INSTALLED_APP_ICON_PATH" \
   "$INSTALLED_APP_PATH/Contents/Resources/whisper/licenses/whisper.cpp-LICENSE.txt" \
   "$INSTALLED_APP_PATH/Contents/Resources/whisper/licenses/OpenAI-Whisper-LICENSE.txt" \
   "$INSTALLED_APP_PATH/Contents/Resources/local-text/licenses/Qwen2.5-LICENSE.txt" \
@@ -227,9 +229,14 @@ fi
 
 EXPECTED_WHISPER_SHA256="$(awk 'NF {print $1; exit}' "$ROOT_DIR/app/macos/PushWrite/Assets/whisper-model.sha256")"
 EXPECTED_LOCAL_TEXT_SHA256="$(awk 'NF {print $1; exit}' "$ROOT_DIR/app/macos/PushWrite/Assets/local-text-model.sha256")"
+EXPECTED_APP_ICON_SHA256="$(awk 'NF {print $1; exit}' "$ROOT_DIR/app/macos/PushWrite/Assets/PushWrite.icns.sha256")"
 if [[ "$(shasum -a 256 "$INSTALLED_WHISPER_MODEL_PATH" | awk '{print $1}')" != "$EXPECTED_WHISPER_SHA256" ||
       "$(shasum -a 256 "$INSTALLED_LOCAL_TEXT_MODEL_PATH" | awk '{print $1}')" != "$EXPECTED_LOCAL_TEXT_SHA256" ]]; then
   echo "A bundled model failed its release checksum check." >&2
+  exit 1
+fi
+if [[ "$(shasum -a 256 "$INSTALLED_APP_ICON_PATH" | awk '{print $1}')" != "$EXPECTED_APP_ICON_SHA256" ]]; then
+  echo "Installed application does not contain the approved PushWrite app icon." >&2
   exit 1
 fi
 if /usr/bin/otool -L "$INSTALLED_LOCAL_TEXT_CLI_PATH" | /usr/bin/grep -Eq '(libcurl|libssl|libcrypto)'; then
@@ -279,6 +286,7 @@ signature_mode=$INSTALLED_SIGNATURE_MODE
 team_identifier=$INSTALLED_TEAM_ID
 entitlements_exact=true
 bundled_models_verified=true
+app_icon_verified=true
 runtime_dependencies_verified=true
 production_qa_markers_absent=true
 launchservices_smoke_passed=true
@@ -294,6 +302,7 @@ printf '%s\n' "signature_mode=$INSTALLED_SIGNATURE_MODE"
 printf '%s\n' "team_identifier=$INSTALLED_TEAM_ID"
 printf '%s\n' "entitlements_exact=true"
 printf '%s\n' "bundled_models_verified=true"
+printf '%s\n' "app_icon_verified=true"
 printf '%s\n' "runtime_dependencies_verified=true"
 printf '%s\n' "production_qa_markers_absent=true"
 printf '%s\n' "launchservices_smoke_passed=true"

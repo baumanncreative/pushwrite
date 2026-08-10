@@ -52,7 +52,7 @@ export PUSHWRITE_ACKNOWLEDGE_UNSIGNED_RELEASE=YES
 ./scripts/build_pushwrite_unsigned_release.sh
 ```
 
-This path preserves the stable `0.3.0` application version, creates clearly suffixed `-unsigned` ZIP and DMG assets, verifies the ad-hoc code structure and bundled payload, validates both archives and launch, enforces GitHub's per-asset size limit, and records `notarized=false` in the release metadata. It refuses to create output unless the unnotarized distribution is explicitly acknowledged. Public artifacts are built by `.github/workflows/release.yml`, receive GitHub Actions/Sigstore build-provenance attestations and must be published with repository release immutability enabled.
+This path preserves the stable `0.3.1` application version, creates clearly suffixed `-unsigned` ZIP and DMG assets, verifies the ad-hoc code structure and bundled payload, validates both archives and launch, enforces GitHub's per-asset size limit, and records `notarized=false` in the release metadata. It refuses to create output unless the unnotarized distribution is explicitly acknowledged. Public artifacts are built by `.github/workflows/release.yml`, receive GitHub Actions/Sigstore build-provenance attestations and must be published with repository release immutability enabled.
 
 Stable Developer ID release:
 

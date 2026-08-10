@@ -1,6 +1,6 @@
 # Roadmap
 
-## 0.3.0 — current
+## 0.3.1 — current
 
 - ARM64 macOS 13+ menu-bar release
 - local push-to-talk recording and multilingual Whisper transcription
@@ -9,6 +9,8 @@
 - reproducible ad-hoc DMG/ZIP packaging
 - fully local Swiss German normalization and German/English/Spanish/French translation
 - separate automatic/fixed spoken-language and system/fixed output-language controls
+- explicit United States labeling for English input and output
+- Gatekeeper override instructions included directly in the unsigned DMG
 
 ## Next release
 

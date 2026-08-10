@@ -69,6 +69,7 @@ MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 ASSETS_DIR="$SOURCE_DIR/Assets"
 APP_ICON="$ASSETS_DIR/PushWrite.icns"
+APP_ICON_CHECKSUM="$ASSETS_DIR/PushWrite.icns.sha256"
 WHISPER_RESOURCES_DIR="$RESOURCES_DIR/whisper"
 WHISPER_BIN_DIR="$WHISPER_RESOURCES_DIR/bin"
 WHISPER_MODELS_DIR="$WHISPER_RESOURCES_DIR/models"
@@ -155,6 +156,10 @@ if [[ ! -f "$APP_ICON" ]]; then
     "$ROOT_DIR/scripts/build_pushwrite_icon.swift" \
     -o "$ICON_BUILDER"
   "$ICON_BUILDER" "$ASSETS_DIR/PushWrite.iconset" "$APP_ICON"
+fi
+if ! (cd "$ROOT_DIR" && shasum -a 256 -c "$APP_ICON_CHECKSUM" >/dev/null); then
+  echo "App icon does not match the approved white PushWrite waveform icon." >&2
+  exit 1
 fi
 if [[ ! -f "$ENTITLEMENTS_PLIST" ]]; then
   echo "Missing app entitlements at $ENTITLEMENTS_PLIST" >&2

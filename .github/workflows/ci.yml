@@ -104,7 +104,9 @@ jobs:
             echo "llama-completion unexpectedly links a network or TLS library" >&2
             exit 1
           fi
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /tmp/pushwrite-ci-product/PushWrite.app/Contents/Info.plist)" = "0.3.0"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /tmp/pushwrite-ci-product/PushWrite.app/Contents/Info.plist)" = "0.3.1"
+          shasum -a 256 -c app/macos/PushWrite/Assets/PushWrite.icns.sha256
+          test "$(shasum -a 256 /tmp/pushwrite-ci-product/PushWrite.app/Contents/Resources/PushWrite.icns | awk '{print $1}')" = "$(awk 'NF {print $1; exit}' app/macos/PushWrite/Assets/PushWrite.icns.sha256)"
           test "$(codesign -d --entitlements :- /tmp/pushwrite-ci-product/PushWrite.app 2>/dev/null | plutil -extract 'com\.apple\.security\.device\.audio-input' raw -o - -)" = "true"
           shasum -a 256 -c app/macos/PushWrite/Assets/whisper-model.sha256
           (cd /tmp/pushwrite-ci-product/PushWrite.app/Contents/Resources/local-text/models && shasum -a 256 -c "${GITHUB_WORKSPACE}/app/macos/PushWrite/Assets/local-text-model.sha256")

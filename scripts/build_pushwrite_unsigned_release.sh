@@ -74,6 +74,26 @@ VALIDATION_PATH="$STAGE_DIR/install-validation.txt"
 INSTALLATION_PATH="$STAGE_DIR/INSTALLATION.txt"
 DMG_STAGING="$BUILD_ROOT/dmg-staging"
 
+cat > "$INSTALLATION_PATH" <<INSTALLATION
+PushWrite $VERSION wird direkt über GitHub und ohne Apple Developer ID oder Notarisierung verteilt.
+
+1. Öffne das DMG und ziehe PushWrite.app auf Applications.
+2. Starte PushWrite einmal.
+3. Die erste macOS-Warnung bietet nur "In den Papierkorb legen" und "Fertig" an. Wähle "Fertig".
+4. Öffne Systemeinstellungen > Datenschutz & Sicherheit.
+5. Scrolle zu Sicherheit und wähle bei PushWrite "Dennoch öffnen". Bestätige danach "Öffnen".
+6. Erlaube Mikrofon und Bedienungshilfen, sobald PushWrite danach fragt.
+
+Ohne Apple Developer ID ist diese einmalige manuelle Freigabe technisch erforderlich.
+
+Prüfe vor dem Öffnen die GitHub-Build-Attestierung und den unveränderlichen Release:
+
+  gh attestation verify FILE -R baumanncreative/pushwrite --signer-workflow baumanncreative/pushwrite/.github/workflows/release.yml --source-ref refs/heads/main
+  gh release verify-asset v$VERSION FILE -R baumanncreative/pushwrite
+
+SHA256SUMS.txt erkennt zusätzlich versehentliche Übertragungsfehler.
+INSTALLATION
+
 /usr/bin/ditto "$PRODUCT_BUILD_ROOT/PushWrite.app" "$APP_PATH"
 /usr/bin/codesign --verify --deep --strict --verbose=4 "$APP_PATH"
 if ! /usr/bin/codesign -dvv "$APP_PATH" 2>&1 | /usr/bin/grep -F 'Signature=adhoc' >/dev/null; then
@@ -116,6 +136,7 @@ done
 mkdir -m 700 -p "$DMG_STAGING"
 /usr/bin/ditto "$APP_PATH" "$DMG_STAGING/PushWrite.app"
 /bin/ln -s /Applications "$DMG_STAGING/Applications"
+/bin/cp "$INSTALLATION_PATH" "$DMG_STAGING/INSTALLIEREN.txt"
 /usr/bin/hdiutil create \
   -volname "PushWrite $VERSION" \
   -srcfolder "$DMG_STAGING" \
@@ -171,8 +192,14 @@ if [[ ! -d "$DMG_APP" || ! -L "$DMG_MOUNT/Applications" || "$(/usr/bin/readlink 
   echo "Mounted DMG does not contain the expected app and Applications link." >&2
   exit 1
 fi
+if [[ ! -f "$DMG_MOUNT/INSTALLIEREN.txt" ]] \
+  || ! /usr/bin/grep -F 'Datenschutz & Sicherheit' "$DMG_MOUNT/INSTALLIEREN.txt" >/dev/null \
+  || ! /usr/bin/grep -F 'Dennoch öffnen' "$DMG_MOUNT/INSTALLIEREN.txt" >/dev/null; then
+  echo "Mounted DMG does not contain the required Gatekeeper installation guidance." >&2
+  exit 1
+fi
 DMG_TOP_LEVEL_COUNT="$(/usr/bin/find "$DMG_MOUNT" -mindepth 1 -maxdepth 1 ! -name '.Trashes' | /usr/bin/wc -l | tr -d ' ')"
-if [[ "$DMG_TOP_LEVEL_COUNT" != "2" ]]; then
+if [[ "$DMG_TOP_LEVEL_COUNT" != "3" ]]; then
   echo "Mounted DMG contains unexpected top-level entries." >&2
   exit 1
 fi
@@ -184,6 +211,7 @@ if ! /usr/bin/codesign -dvv "$DMG_APP" 2>&1 | /usr/bin/grep -F 'Signature=adhoc'
 fi
 for relative_payload in \
   Contents/MacOS/PushWrite \
+  Contents/Resources/PushWrite.icns \
   Contents/Resources/whisper/bin/whisper-cli \
   Contents/Resources/whisper/models/ggml-large-v3-q5_0.bin \
   Contents/Resources/local-text/bin/llama-completion \
@@ -197,29 +225,13 @@ done
 /usr/bin/hdiutil detach "$DMG_MOUNT" >/dev/null
 DMG_ATTACHED=0
 
-cat > "$INSTALLATION_PATH" <<'INSTALLATION'
-PushWrite is distributed directly through GitHub without an Apple Developer ID or notarization.
-
-1. Open the DMG and drag PushWrite.app to Applications.
-2. Try to start PushWrite once.
-3. If macOS blocks it, open System Settings > Privacy & Security.
-4. Scroll down and choose Open Anyway for PushWrite, then confirm.
-5. Grant Microphone and Accessibility access when requested.
-
-Verify the GitHub build attestation and immutable release before opening the file:
-
-  gh attestation verify FILE -R baumanncreative/pushwrite --signer-workflow baumanncreative/pushwrite/.github/workflows/release.yml --source-ref refs/heads/main
-  gh release verify-asset v0.3.0 FILE -R baumanncreative/pushwrite
-
-SHA256SUMS.txt additionally detects accidental transfer corruption.
-INSTALLATION
-
 (
   cd "$STAGE_DIR"
   shasum -a 256 "$ZIP_NAME" "$DMG_NAME" > "${CHECKSUM_PATH:t}"
 )
 
 APP_CDHASH="$(/usr/bin/codesign -dv --verbose=4 "$APP_PATH" 2>&1 | awk -F= '/^CDHash=/{print $2; exit}')"
+APP_ICON_SHA256="$(shasum -a 256 "$APP_PATH/Contents/Resources/PushWrite.icns" | awk '{print $1}')"
 BUNDLE_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist")"
 cat > "$METADATA_PATH" <<METADATA
 version=$VERSION
@@ -236,6 +248,7 @@ gatekeeper_override_may_be_required=true
 distribution_authentication=github-actions-sigstore-attestation
 immutable_github_release_required=true
 app_cdhash=$APP_CDHASH
+app_icon_sha256=$APP_ICON_SHA256
 zip_name=$ZIP_NAME
 zip_sha256=$ZIP_SHA256
 zip_size_bytes=$ZIP_SIZE_BYTES
