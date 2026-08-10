@@ -7,12 +7,12 @@ enum LanguageSettingsCatalog {
         "Deutsch (Deutschland)",
         "Deutsch (Österreich)",
         "Deutsch (Schweiz / Schweizerdeutsch)",
-        "Englisch",
+        "Englisch (USA)",
         "Spanisch",
         "Französisch",
     ]
     static let inputValues = ["auto", "de-DE", "de-AT", "de-CH", "en", "es", "fr"]
-    static let outputTitles = ["System", "Deutsch", "Englisch", "Spanisch", "Französisch"]
+    static let outputTitles = ["System", "Deutsch", "Englisch (USA)", "Spanisch", "Französisch"]
     static let outputValues = ["system", "de", "en", "es", "fr"]
 }
 

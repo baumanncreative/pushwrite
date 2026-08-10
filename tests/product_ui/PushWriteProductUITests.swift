@@ -12,7 +12,7 @@ enum PushWriteProductUITests {
             hotKeyText: "Control+Option+Command+P",
             accessibilityGranted: true,
             microphoneStatusText: "Noch nicht angefragt",
-            versionText: "0.3.0"
+            versionText: "0.3.1"
         )
         let refreshed = MenuBarSnapshot(
             state: .ready,
@@ -20,7 +20,7 @@ enum PushWriteProductUITests {
             hotKeyText: "Control+Option+Command+P",
             accessibilityGranted: true,
             microphoneStatusText: "Erlaubt",
-            versionText: "0.3.0"
+            versionText: "0.3.1"
         )
 
         let controller = PushWriteMenuBarController(initialSnapshot: initial)
@@ -49,7 +49,12 @@ enum PushWriteProductUITests {
             fputs("The output language default must be labeled System.\n", stderr)
             exit(1)
         }
+        guard LanguageSettingsCatalog.inputTitles[4] == "Englisch (USA)",
+              LanguageSettingsCatalog.outputTitles[2] == "Englisch (USA)" else {
+            fputs("English must be labeled with its United States locale in both settings.\n", stderr)
+            exit(1)
+        }
 
-        print("PushWriteProductUITests: 2 passed")
+        print("PushWriteProductUITests: 3 passed")
     }
 }

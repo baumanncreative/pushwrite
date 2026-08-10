@@ -6,6 +6,14 @@ All notable changes are documented here.
 
 No unreleased changes.
 
+## [0.3.1] - 2026-08-10
+
+### Changed
+
+- labeled English as `Englisch (USA)` in both spoken-language and output-language settings
+- pinned the approved white waveform app icon in product and install validation
+- added the exact Gatekeeper override sequence directly to the unsigned DMG
+
 ## [0.3.0] - 2026-08-10
 
 ### Added

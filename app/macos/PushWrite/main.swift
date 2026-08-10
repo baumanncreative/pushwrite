@@ -2323,7 +2323,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         case .notDetermined: microphoneText = "Noch nicht angefragt"
         }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "0.3.0"
+            ?? "0.3.1"
         return MenuBarSnapshot(
             state: state,
             statusText: statusText,
