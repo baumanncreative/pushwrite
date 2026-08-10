@@ -194,8 +194,14 @@ for payload in \
 done
 
 /usr/bin/codesign --verify --deep --strict "$INSTALLED_APP_PATH"
+SIGNATURE_DETAILS="$(/usr/bin/codesign -dvv "$INSTALLED_APP_PATH" 2>&1)"
+if printf '%s\n' "$SIGNATURE_DETAILS" | /usr/bin/grep -F 'Signature=adhoc' >/dev/null; then
+  INSTALLED_SIGNATURE_MODE="ad-hoc"
+else
+  INSTALLED_SIGNATURE_MODE="developer-id"
+fi
+INSTALLED_TEAM_ID="$(printf '%s\n' "$SIGNATURE_DETAILS" | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
 if [[ -n "${PUSHWRITE_EXPECTED_TEAM_ID:-}" ]]; then
-  INSTALLED_TEAM_ID="$(/usr/bin/codesign -dvv "$INSTALLED_APP_PATH" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')"
   if [[ "$INSTALLED_TEAM_ID" != "$PUSHWRITE_EXPECTED_TEAM_ID" ]]; then
     echo "Extracted application TeamIdentifier does not match the stable release identity." >&2
     exit 1
@@ -269,6 +275,11 @@ runtime_root=$RUNTIME_ROOT
 installed_app_path=$INSTALLED_APP_PATH
 bundle_identifier=$INSTALLED_BUNDLE_ID
 bundle_version=$INSTALLED_VERSION
+signature_mode=$INSTALLED_SIGNATURE_MODE
+team_identifier=$INSTALLED_TEAM_ID
+entitlements_exact=true
+bundled_models_verified=true
+runtime_dependencies_verified=true
 production_qa_markers_absent=true
 launchservices_smoke_passed=true
 RESULTS
@@ -279,5 +290,10 @@ printf '%s\n' "artifact_sha256=$ACTUAL_SHA256"
 printf '%s\n' "installed_app_path=$INSTALLED_APP_PATH"
 printf '%s\n' "bundle_identifier=$INSTALLED_BUNDLE_ID"
 printf '%s\n' "bundle_version=$INSTALLED_VERSION"
+printf '%s\n' "signature_mode=$INSTALLED_SIGNATURE_MODE"
+printf '%s\n' "team_identifier=$INSTALLED_TEAM_ID"
+printf '%s\n' "entitlements_exact=true"
+printf '%s\n' "bundled_models_verified=true"
+printf '%s\n' "runtime_dependencies_verified=true"
 printf '%s\n' "production_qa_markers_absent=true"
 printf '%s\n' "launchservices_smoke_passed=true"

@@ -67,7 +67,7 @@ The SDK override is only needed on machines whose active Command Line Tools SDK 
 
 ## Install
 
-Open the DMG, drag `PushWrite.app` to `/Applications`, start it, then grant the requested permissions. Stable published artifacts must be Developer-ID signed, notarized and stapled; the release builder refuses publication without that configuration. See [docs/installing.md](docs/installing.md).
+Open the DMG, drag `PushWrite.app` to `/Applications`, start it, then grant the requested permissions. The GitHub direct-download build is explicitly marked `-unsigned`, is not Apple-notarized and may require **Open Anyway** under System Settings → Privacy & Security on first launch. It is built on GitHub Actions with Sigstore-backed provenance and published as an immutable release. A separate authenticated builder remains available for Developer-ID-signed and notarized artifacts. See [docs/installing.md](docs/installing.md).
 
 ## Repository layout
 

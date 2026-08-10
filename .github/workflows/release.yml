@@ -1,0 +1,171 @@
+name: Publish PushWrite release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: publish-pushwrite-0.3.0
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify release identity and gates
+        run: |
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' app/macos/PushWrite/Info.plist)" = "0.3.0"
+          if gh release view v0.3.0 >/dev/null 2>&1; then
+            echo "Release v0.3.0 already exists; refusing to replace it." >&2
+            exit 1
+          fi
+          tag_sha="$(gh api repos/baumanncreative/pushwrite/git/ref/tags/v0.3.0 --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -n "$tag_sha" && "$tag_sha" != "$GITHUB_SHA" ]]; then
+            echo "Tag v0.3.0 already targets another commit: $tag_sha" >&2
+            exit 1
+          fi
+          successful_ci_runs="$(gh run list \
+            --workflow ci.yml \
+            --commit "$GITHUB_SHA" \
+            --event push \
+            --status success \
+            --json headSha \
+            --jq 'length')"
+          if [[ "$successful_ci_runs" -lt 1 ]]; then
+            echo "No successful PushWrite CI push run exists for exact commit $GITHUB_SHA." >&2
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Unit tests
+        run: ./scripts/run_pushwrite_unit_tests.sh
+
+      - name: Menu permission refresh test
+        run: ./scripts/run_pushwrite_ui_tests.sh
+
+      - name: Cache Whisper model
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: models/ggml-large-v3-q5_0.bin
+          key: pushwrite-whisper-large-v3-q5-d75795ecff3f83b5
+
+      - name: Fetch verified Whisper model
+        run: ./scripts/fetch_whisper_model.sh
+
+      - name: Cache local text model
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+            models/Qwen2.5-LICENSE.txt
+            models/local-text-model.sha256
+            models/local-text-license.sha256
+          key: pushwrite-qwen2.5-1.5b-q4km-183715c435899236
+
+      - name: Fetch verified local text model
+        run: ./scripts/fetch_local_text_model.sh
+
+      - name: Install verified Kitware CMake
+        run: |
+          cmake_archive="$RUNNER_TEMP/cmake-4.4.2-macos-universal.tar.gz"
+          cmake_root="$RUNNER_TEMP/cmake-4.4.2"
+          curl -fL --proto '=https' --max-time 180 --max-filesize 200000000 \
+            https://github.com/Kitware/CMake/releases/download/v4.4.2/cmake-4.4.2-macos-universal.tar.gz \
+            -o "$cmake_archive"
+          echo '800fc86838e913fff969b499886c80baeb4ccfd00f0e39906b34aa334f39ab6c  '"$cmake_archive" \
+            | shasum -a 256 -c -
+          mkdir -p "$cmake_root"
+          tar -xzf "$cmake_archive" -C "$cmake_root" --strip-components=1
+          cmake_bin="$cmake_root/CMake.app/Contents/bin/cmake"
+          test ! -L "$cmake_bin"
+          test -f "$cmake_bin"
+          test -x "$cmake_bin"
+          codesign --verify --strict \
+            -R='identifier "cmake" and anchor apple generic and certificate leaf[subject.OU] = "W38PE5Y733"' \
+            "$cmake_bin"
+          echo 'ac294d13ed00a648ffbb38c5753a26fc873b3317555dbc3d02a5354e0bcd8bf2  '"$cmake_bin" \
+            | shasum -a 256 -c -
+          echo "PUSHWRITE_CMAKE_BIN=$cmake_bin" >> "$GITHUB_ENV"
+          echo "PUSHWRITE_CMAKE_SHA256=ac294d13ed00a648ffbb38c5753a26fc873b3317555dbc3d02a5354e0bcd8bf2" >> "$GITHUB_ENV"
+
+      - name: Build and validate direct-download release
+        run: ./scripts/build_pushwrite_unsigned_release.sh
+        env:
+          PUSHWRITE_ACKNOWLEDGE_UNSIGNED_RELEASE: "YES"
+
+      - name: Attest ZIP build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: build/releases/PushWrite-0.3.0-unsigned/PushWrite-0.3.0-macos-arm64-unsigned.zip
+
+      - name: Attest DMG build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: build/releases/PushWrite-0.3.0-unsigned/PushWrite-0.3.0-macos-arm64-unsigned.dmg
+
+      - name: Verify build provenance attestations
+        run: |
+          release_dir="build/releases/PushWrite-0.3.0-unsigned"
+          for artifact in \
+            "$release_dir/PushWrite-0.3.0-macos-arm64-unsigned.zip" \
+            "$release_dir/PushWrite-0.3.0-macos-arm64-unsigned.dmg"; do
+            gh attestation verify "$artifact" \
+              -R baumanncreative/pushwrite \
+              --signer-workflow baumanncreative/pushwrite/.github/workflows/release.yml \
+              --source-ref refs/heads/main \
+              --source-digest "$GITHUB_SHA"
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish immutable GitHub release
+        run: |
+          release_dir="build/releases/PushWrite-0.3.0-unsigned"
+          tag_sha="$(gh api repos/baumanncreative/pushwrite/git/ref/tags/v0.3.0 --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -z "$tag_sha" ]]; then
+            gh api --method POST repos/baumanncreative/pushwrite/git/refs \
+              -f ref=refs/tags/v0.3.0 \
+              -f sha="$GITHUB_SHA" >/dev/null
+          elif [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+            echo "Tag v0.3.0 changed before publication." >&2
+            exit 1
+          fi
+          gh release create v0.3.0 \
+            "$release_dir/PushWrite-0.3.0-macos-arm64-unsigned.zip" \
+            "$release_dir/PushWrite-0.3.0-macos-arm64-unsigned.dmg" \
+            "$release_dir/SHA256SUMS.txt" \
+            "$release_dir/release-metadata.txt" \
+            "$release_dir/install-validation.txt" \
+            "$release_dir/INSTALLATION.txt" \
+            --verify-tag \
+            --title "PushWrite 0.3.0" \
+            --notes-file docs/releases/0.3.0.md \
+            --latest
+          release_verified=0
+          for attempt in 1 2 3 4 5; do
+            if gh release verify v0.3.0 >/dev/null; then
+              release_verified=1
+              break
+            fi
+            sleep 5
+          done
+          if [[ "$release_verified" != "1" ]]; then
+            echo "Published release did not verify as immutable." >&2
+            exit 1
+          fi
+          gh release verify-asset v0.3.0 "$release_dir/PushWrite-0.3.0-macos-arm64-unsigned.zip" >/dev/null
+          gh release verify-asset v0.3.0 "$release_dir/PushWrite-0.3.0-macos-arm64-unsigned.dmg" >/dev/null
+        env:
+          GH_TOKEN: ${{ github.token }}
