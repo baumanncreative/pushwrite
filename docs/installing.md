@@ -1,23 +1,24 @@
-# Installing the 0.2.0-alpha.3 build
+# Installing PushWrite 0.3.0
 
-## Ad-hoc internal Alpha
+## Authenticated release artifact
 
-1. Open `PushWrite-0.2.0-alpha.3-macos-arm64.dmg`.
+1. Open `PushWrite-0.3.0-macos-arm64.dmg`.
 2. Drag `PushWrite.app` to the `Applications` link.
 3. Start `/Applications/PushWrite.app`.
-4. If Gatekeeper blocks the ad-hoc build, use System Settings → Privacy & Security only after verifying the published SHA-256 checksum.
+4. Confirm that macOS identifies the app as notarized software from baumanncreative gmbh. Do not bypass Gatekeeper for a stable release.
 5. Trigger the hotkey once or click the microphone row in the menu and grant microphone permission.
 6. Grant PushWrite in System Settings → Privacy & Security → Accessibility.
 7. Restart PushWrite if macOS requests it.
 
-Do not distribute the ad-hoc artifact as a public trusted release. It has a valid structural ad-hoc signature but no Developer ID identity or notarization ticket.
+Stable artifacts are Developer-ID signed, notarized by Apple and stapled. `SHA256SUMS.txt` remains available for an additional download-integrity check. Ad-hoc output from `build_pushwrite_product.sh` is development-only and must not be published.
 
 ## Use
 
 - Hold `Control + Option + Command + P` while speaking.
 - Release the keys to stop and transcribe.
 - Keep the intended editable field focused until insertion finishes.
-- Use the menu-bar icon to inspect permissions, choose automatic/German/English transcription, open settings or quit.
+- In Settings, choose the spoken language independently from the output language. `System` follows the first supported macOS preferred language and falls back to German.
+- Swiss German input with German output produces Hochdeutsch.
 - Permission labels are refreshed whenever the menu opens and when PushWrite becomes active again after System Settings.
 
 ## Remove

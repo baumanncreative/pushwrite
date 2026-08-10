@@ -26,7 +26,6 @@ enum InsertRoute: String, Codable {
     case accessibilitySelectedText
     case accessibilityValueReplacement
     case unicodeKeyboardEvents
-    case opaqueUnicodeKeyboardEvents
     case pasteboardCommandV
 }
 
@@ -90,6 +89,10 @@ struct LaunchOptions {
     let whisperCLIPath: String?
     let whisperModelPath: String?
     let whisperLanguage: String
+    let localTextCLIPath: String?
+    let localTextModelPath: String?
+    let inputLanguage: String
+    let outputLanguage: String
     let transcriptionFixtureWAVPath: String?
     let forceAccessibilityBlocked: Bool
     let forceAccessibilityTrusted: Bool
@@ -149,6 +152,7 @@ struct HotKeyStateSnapshot: Codable {
 struct ReceiptObservation {
     let accessibilityTrusted: Bool
     let focusSnapshot: FocusSnapshot?
+    let focusElement: AXUIElement?
 }
 
 struct ProductFlowSnapshot: Codable {
@@ -318,6 +322,13 @@ struct TranscriptionArtifact: Codable {
     let modelResolutionSource: String
     let modelName: String
     let language: String
+    let configuredInputLanguage: String
+    let outputLanguage: String
+    let rawTextLength: Int
+    let localTransformationApplied: Bool
+    let localTransformationRuntime: String?
+    let localTransformationModel: String?
+    let localTransformationDurationMs: Int?
     let status: TranscriptionStatus
     let text: String
     let textLength: Int
@@ -326,6 +337,161 @@ struct TranscriptionArtifact: Codable {
     let durationMs: Int
     let error: String?
 }
+
+struct LocalTextTransformationResult {
+    let text: String
+    let runtimePath: String
+    let modelPath: String
+    let durationMs: Int
+}
+
+struct WhisperCLIResult {
+    let text: String
+    let language: String?
+}
+
+final class ThreadSafeDataBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func store(_ newData: Data) {
+        lock.lock()
+        data = newData
+        lock.unlock()
+    }
+
+    func load() -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return data
+    }
+}
+
+#if PUSHWRITE_QA_CONTROL_INTERFACE
+typealias PushWriteAudioRecorder = AVAudioRecorder
+#else
+final class PushWriteAudioRecorder {
+    private let engine = AVAudioEngine()
+    private let sampleLock = NSLock()
+    private var monoSamples: [Float] = []
+    private var sourceSampleRate: Double = 0
+    private var recordingStartedAt: Date?
+
+    init(url _: URL, settings _: [String: Any]) throws {}
+
+    var currentTime: TimeInterval {
+        guard let recordingStartedAt else {
+            return 0
+        }
+        return max(Date().timeIntervalSince(recordingStartedAt), 0)
+    }
+
+    func prepareToRecord() {}
+
+    func record() -> Bool {
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            return false
+        }
+
+        sourceSampleRate = format.sampleRate
+        input.installTap(onBus: 0, bufferSize: 4_096, format: format) { [weak self] buffer, _ in
+            guard
+                let self,
+                let channels = buffer.floatChannelData,
+                buffer.frameLength > 0
+            else {
+                return
+            }
+            let frameCount = Int(buffer.frameLength)
+            let channelCount = Int(buffer.format.channelCount)
+            var captured = [Float]()
+            captured.reserveCapacity(frameCount)
+            for frame in 0..<frameCount {
+                var mixed: Float = 0
+                for channel in 0..<channelCount {
+                    mixed += channels[channel][frame]
+                }
+                captured.append(mixed / Float(channelCount))
+            }
+            self.sampleLock.lock()
+            self.monoSamples.append(contentsOf: captured)
+            self.sampleLock.unlock()
+        }
+
+        do {
+            engine.prepare()
+            try engine.start()
+            recordingStartedAt = Date()
+            return true
+        } catch {
+            input.removeTap(onBus: 0)
+            return false
+        }
+    }
+
+    func stop() {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+    }
+
+    func wavData() -> Data {
+        sampleLock.lock()
+        let samples = monoSamples
+        let sampleRate = sourceSampleRate
+        sampleLock.unlock()
+
+        guard sampleRate > 0, !samples.isEmpty else {
+            return Self.wavData(pcm16Samples: [], sampleRate: 16_000)
+        }
+        let targetRate = 16_000.0
+        let outputCount = max(Int((Double(samples.count) * targetRate / sampleRate).rounded()), 0)
+        var pcm16 = [Int16]()
+        pcm16.reserveCapacity(outputCount)
+        for outputIndex in 0..<outputCount {
+            let sourcePosition = Double(outputIndex) * sampleRate / targetRate
+            let lowerIndex = min(Int(sourcePosition), samples.count - 1)
+            let upperIndex = min(lowerIndex + 1, samples.count - 1)
+            let fraction = Float(sourcePosition - Double(lowerIndex))
+            let interpolated = samples[lowerIndex] + ((samples[upperIndex] - samples[lowerIndex]) * fraction)
+            let clamped = max(-1.0, min(1.0, interpolated))
+            pcm16.append(Int16((clamped * Float(Int16.max)).rounded()))
+        }
+        return Self.wavData(pcm16Samples: pcm16, sampleRate: 16_000)
+    }
+
+    private static func wavData(pcm16Samples: [Int16], sampleRate: UInt32) -> Data {
+        let dataByteCount = UInt32(pcm16Samples.count * MemoryLayout<Int16>.size)
+        var data = Data()
+        data.append(contentsOf: Array("RIFF".utf8))
+        data.appendLittleEndian(UInt32(36) + dataByteCount)
+        data.append(contentsOf: Array("WAVEfmt ".utf8))
+        data.appendLittleEndian(UInt32(16))
+        data.appendLittleEndian(UInt16(1))
+        data.appendLittleEndian(UInt16(1))
+        data.appendLittleEndian(sampleRate)
+        data.appendLittleEndian(sampleRate * UInt32(MemoryLayout<Int16>.size))
+        data.appendLittleEndian(UInt16(MemoryLayout<Int16>.size))
+        data.appendLittleEndian(UInt16(16))
+        data.append(contentsOf: Array("data".utf8))
+        data.appendLittleEndian(dataByteCount)
+        for sample in pcm16Samples {
+            data.appendLittleEndian(sample)
+        }
+        return data
+    }
+}
+
+private extension Data {
+    mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
+        var littleEndian = value.littleEndian
+        Swift.withUnsafeBytes(of: &littleEndian) { bytes in
+            append(contentsOf: bytes)
+        }
+    }
+}
+#endif
 
 enum WhisperResourceSource: String {
     case bundledProductResource
@@ -343,7 +509,15 @@ struct ResolvedWhisperRuntime {
     let model: ResolvedWhisperPath
 }
 
-let bundledWhisperModelSHA256 = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
+let bundledWhisperModelSHA256 = "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1"
+let bundledWhisperModelSize: UInt64 = 1_081_140_203
+let bundledLocalTextModelSHA256 = "183715c435899236895da3869489cc30ac241476b4971a20285b1a462818a5b4"
+let bundledLocalTextModelSize: UInt64 = 986_048_512
+
+struct ResolvedLocalTextRuntime {
+    let cli: ResolvedWhisperPath
+    let model: ResolvedWhisperPath
+}
 
 struct TranscriptionResult: Codable {
     let id: String
@@ -531,6 +705,11 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
     case missingWhisperCLI(String)
     case missingWhisperModel(String)
     case invalidWhisperModel(String)
+    case missingLocalTextCLI(String)
+    case missingLocalTextModel(String)
+    case invalidLocalTextModel(String)
+    case localTextTransformationFailed(String)
+    case invalidRuntimeDirectory(String)
     case missingTranscriptionFixture(String)
     case failedToInspectRecording(String)
     case failedToReplaceRecordingArtifact(String)
@@ -574,6 +753,16 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
             return "whisper.cpp model is missing at \(path)."
         case let .invalidWhisperModel(message):
             return "The bundled whisper.cpp model failed its integrity check: \(message)"
+        case let .missingLocalTextCLI(path):
+            return "The local text-processing runtime is missing at \(path)."
+        case let .missingLocalTextModel(path):
+            return "The local text-processing model is missing at \(path)."
+        case let .invalidLocalTextModel(message):
+            return "The bundled local text-processing model failed its integrity check: \(message)"
+        case let .localTextTransformationFailed(message):
+            return "Local transcript normalization or translation failed: \(message)"
+        case let .invalidRuntimeDirectory(path):
+            return "The configured runtime directory is not an allowed PushWrite runtime location: \(path)"
         case let .missingTranscriptionFixture(path):
             return "Transcription fixture WAV is missing at \(path)."
         case let .failedToInspectRecording(message):
@@ -601,8 +790,10 @@ final class ActiveRecordingSession {
     let startedAt: Date
     let startedAtTimestamp: String
     let focusAtStart: FocusSnapshot?
-    let recorder: AVAudioRecorder
+    let focusElementAtStart: AXUIElement?
+    let recorder: PushWriteAudioRecorder
     let requestedMicrophonePermission: Bool
+    var inMemoryWAVData: Data?
 
     init(
         flowID: String,
@@ -611,7 +802,8 @@ final class ActiveRecordingSession {
         startedAt: Date,
         startedAtTimestamp: String,
         focusAtStart: FocusSnapshot?,
-        recorder: AVAudioRecorder,
+        focusElementAtStart: AXUIElement?,
+        recorder: PushWriteAudioRecorder,
         requestedMicrophonePermission: Bool
     ) {
         self.flowID = flowID
@@ -620,21 +812,35 @@ final class ActiveRecordingSession {
         self.startedAt = startedAt
         self.startedAtTimestamp = startedAtTimestamp
         self.focusAtStart = focusAtStart
+        self.focusElementAtStart = focusElementAtStart
         self.recorder = recorder
         self.requestedMicrophonePermission = requestedMicrophonePermission
     }
 }
 
+#if PUSHWRITE_QA_CONTROL_INTERFACE
 func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
+    let controlInterfaceEnabled =
+        ProcessInfo.processInfo.environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] == "1"
     var runtimeDir = ProcessInfo.processInfo.environment["PUSHWRITE_PRODUCT_RUNTIME_DIR"] ?? ""
     var simulatedTranscriptionText = defaultSimulatedTranscriptionText()
     var whisperCLIPath = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_CLI_PATH"]
     var whisperModelPath = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_MODEL_PATH"]
     var whisperLanguage = ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_LANGUAGE"]
-        ?? UserDefaults.standard.string(forKey: "transcriptionLanguage")
         ?? "auto"
+    var localTextCLIPath = ProcessInfo.processInfo.environment["PUSHWRITE_LOCAL_TEXT_CLI_PATH"]
+    var localTextModelPath = ProcessInfo.processInfo.environment["PUSHWRITE_LOCAL_TEXT_MODEL_PATH"]
+    var inputLanguage = ProcessInfo.processInfo.environment["PUSHWRITE_INPUT_LANGUAGE"]
+        ?? ProcessInfo.processInfo.environment["PUSHWRITE_WHISPER_LANGUAGE"]
+        ?? UserDefaults.standard.string(forKey: "inputLanguage")
+        ?? "auto"
+    var outputLanguage = ProcessInfo.processInfo.environment["PUSHWRITE_OUTPUT_LANGUAGE"]
+        ?? UserDefaults.standard.string(forKey: "outputLanguage")
+        ?? UserDefaults.standard.string(forKey: "transcriptionLanguage")
+        ?? "system"
     var transcriptionFixtureWAVPath = ProcessInfo.processInfo.environment["PUSHWRITE_TRANSCRIPTION_FIXTURE_WAV"]
-    var forceAccessibilityBlocked = accessibilityBlockedOverrideEnabled()
+    var forceAccessibilityBlocked =
+        ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_BLOCKED"] == "1"
     var forceAccessibilityTrusted = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_TRUSTED"] == "1"
     var forceMicrophoneDenied = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_DENIED"] == "1"
     var forceNoMicrophoneDevice = ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_NO_MICROPHONE_DEVICE"] == "1"
@@ -672,6 +878,17 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
             whisperModelPath = try requireValue(for: argument)
         case "--whisper-language":
             whisperLanguage = try requireValue(for: argument)
+            if inputLanguage == "auto" {
+                inputLanguage = whisperLanguage
+            }
+        case "--local-text-cli-path":
+            localTextCLIPath = try requireValue(for: argument)
+        case "--local-text-model-path":
+            localTextModelPath = try requireValue(for: argument)
+        case "--input-language":
+            inputLanguage = try requireValue(for: argument)
+        case "--output-language":
+            outputLanguage = try requireValue(for: argument)
         case "--transcription-fixture-wav":
             transcriptionFixtureWAVPath = try requireValue(for: argument)
         case "--force-accessibility-blocked":
@@ -702,8 +919,40 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
         index += 1
     }
 
+    let productionRuntimeDir =
+        "\(FileManager.default.homeDirectoryForCurrentUser.path)/Library/Application Support/PushWrite/runtime"
     if runtimeDir.isEmpty {
-        runtimeDir = "\(FileManager.default.homeDirectoryForCurrentUser.path)/Library/Application Support/PushWrite/runtime"
+        runtimeDir = productionRuntimeDir
+    } else {
+        let canonicalRuntimeDir = URL(fileURLWithPath: runtimeDir)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
+        let canonicalWorkingDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
+        let isSafeControlRuntime =
+            canonicalRuntimeDir.hasPrefix("/private/tmp/")
+            || canonicalRuntimeDir.hasPrefix("/tmp/")
+            || canonicalRuntimeDir.hasPrefix("\(canonicalWorkingDirectory)/build/")
+        guard controlInterfaceEnabled && isSafeControlRuntime else {
+            throw ProductRuntimeError.invalidRuntimeDirectory(canonicalRuntimeDir)
+        }
+        runtimeDir = canonicalRuntimeDir
+    }
+
+    if !controlInterfaceEnabled {
+        simulatedTranscriptionText = "PushWrite 002E simulated transcription."
+        transcriptionFixtureWAVPath = nil
+        forceAccessibilityBlocked = false
+        forceAccessibilityTrusted = false
+        forceMicrophoneDenied = false
+        forceNoMicrophoneDevice = false
+        forceMicrophoneRecorderStartFailure = false
+        forceSyntheticPasteFailure = false
+        forcedMicrophonePermissionStatus = nil
+        forcedMicrophonePermissionRequestResult = nil
     }
 
     return LaunchOptions(
@@ -712,6 +961,10 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
         whisperCLIPath: whisperCLIPath,
         whisperModelPath: whisperModelPath,
         whisperLanguage: whisperLanguage,
+        localTextCLIPath: localTextCLIPath,
+        localTextModelPath: localTextModelPath,
+        inputLanguage: inputLanguage,
+        outputLanguage: outputLanguage,
         transcriptionFixtureWAVPath: transcriptionFixtureWAVPath,
         forceAccessibilityBlocked: forceAccessibilityBlocked,
         forceAccessibilityTrusted: forceAccessibilityTrusted,
@@ -723,6 +976,41 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
         forcedMicrophonePermissionRequestResult: forcedMicrophonePermissionRequestResult
     )
 }
+#else
+func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
+    guard arguments.isEmpty else {
+        throw ProductRuntimeError.unknownArgument(arguments[0])
+    }
+
+    let inputLanguage = UserDefaults.standard.string(forKey: "inputLanguage") ?? "auto"
+    let outputLanguage = UserDefaults.standard.string(forKey: "outputLanguage")
+        ?? UserDefaults.standard.string(forKey: "transcriptionLanguage")
+        ?? "system"
+    let runtimeDir =
+        "\(FileManager.default.homeDirectoryForCurrentUser.path)/Library/Application Support/PushWrite/runtime"
+
+    return LaunchOptions(
+        runtimeDir: runtimeDir,
+        simulatedTranscriptionText: "PushWrite simulated transcription.",
+        whisperCLIPath: nil,
+        whisperModelPath: nil,
+        whisperLanguage: inputLanguage,
+        localTextCLIPath: nil,
+        localTextModelPath: nil,
+        inputLanguage: inputLanguage,
+        outputLanguage: outputLanguage,
+        transcriptionFixtureWAVPath: nil,
+        forceAccessibilityBlocked: false,
+        forceAccessibilityTrusted: false,
+        forceMicrophoneDenied: false,
+        forceNoMicrophoneDevice: false,
+        forceMicrophoneRecorderStartFailure: false,
+        forceSyntheticPasteFailure: false,
+        forcedMicrophonePermissionStatus: nil,
+        forcedMicrophonePermissionRequestResult: nil
+    )
+}
+#endif
 
 func parseMicrophonePermissionStatusOverride(_ value: String?) -> MicrophonePermissionStatus? {
     guard let value else {
@@ -770,11 +1058,13 @@ func fourCharCode(_ value: String) -> OSType {
 }
 
 func defaultSimulatedTranscriptionText() -> String {
+#if PUSHWRITE_QA_CONTROL_INTERFACE
     let override = ProcessInfo.processInfo.environment["PUSHWRITE_SIMULATED_TRANSCRIPTION_TEXT"]?
         .trimmingCharacters(in: .whitespacesAndNewlines)
     if let override, !override.isEmpty {
         return override
     }
+#endif
     return "PushWrite 002E simulated transcription."
 }
 
@@ -804,7 +1094,52 @@ func bundledWhisperModelPath() -> String {
     return resourceURL
         .appendingPathComponent("whisper", isDirectory: true)
         .appendingPathComponent("models", isDirectory: true)
-        .appendingPathComponent("ggml-tiny.bin", isDirectory: false)
+        .appendingPathComponent("ggml-large-v3-q5_0.bin", isDirectory: false)
+        .path
+}
+
+func bundledLocalTextCLIPath() -> String {
+    guard let resourceURL = Bundle.main.resourceURL else {
+        return ""
+    }
+    return resourceURL
+        .appendingPathComponent("local-text", isDirectory: true)
+        .appendingPathComponent("bin", isDirectory: true)
+        .appendingPathComponent("llama-completion", isDirectory: false)
+        .path
+}
+
+func bundledLocalTextModelPath() -> String {
+    guard let resourceURL = Bundle.main.resourceURL else {
+        return ""
+    }
+    return resourceURL
+        .appendingPathComponent("local-text", isDirectory: true)
+        .appendingPathComponent("models", isDirectory: true)
+        .appendingPathComponent("qwen2.5-1.5b-instruct-q4_k_m.gguf", isDirectory: false)
+        .path
+}
+
+func repoFallbackLocalTextCLIPath() -> String {
+    Bundle.main.bundleURL
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("build", isDirectory: true)
+        .appendingPathComponent("llamacpp", isDirectory: true)
+        .appendingPathComponent("build", isDirectory: true)
+        .appendingPathComponent("bin", isDirectory: true)
+        .appendingPathComponent("llama-completion", isDirectory: false)
+        .path
+}
+
+func repoFallbackLocalTextModelPath() -> String {
+    Bundle.main.bundleURL
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("models", isDirectory: true)
+        .appendingPathComponent("qwen2.5-1.5b-instruct-q4_k_m.gguf", isDirectory: false)
         .path
 }
 
@@ -827,13 +1162,14 @@ func repoFallbackWhisperModelPath() -> String {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .appendingPathComponent("models", isDirectory: true)
-        .appendingPathComponent("ggml-tiny.bin", isDirectory: false)
+        .appendingPathComponent("ggml-large-v3-q5_0.bin", isDirectory: false)
         .path
 }
 
 func resolveWhisperCLIPath(launchOptions: LaunchOptions) throws -> ResolvedWhisperPath {
+    let allowTestOverride = testRuntimeOverridesEnabled()
     let explicitPath = launchOptions.whisperCLIPath?.trimmingCharacters(in: .whitespacesAndNewlines)
-    if ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_TEST_RUNTIME_OVERRIDE"] == "1",
+    if allowTestOverride,
        let explicitPath,
        !explicitPath.isEmpty {
         guard FileManager.default.isExecutableFile(atPath: explicitPath) else {
@@ -852,20 +1188,8 @@ func resolveWhisperCLIPath(launchOptions: LaunchOptions) throws -> ResolvedWhisp
         return ResolvedWhisperPath(path: bundledPath, source: .bundledProductResource)
     }
 
-    if let explicitPath, !explicitPath.isEmpty {
-        guard FileManager.default.fileExists(atPath: explicitPath) else {
-            throw ProductRuntimeError.missingWhisperCLI(explicitPath)
-        }
-        guard FileManager.default.isExecutableFile(atPath: explicitPath) else {
-            throw ProductRuntimeError.missingWhisperCLI(
-                "Configured whisper-cli exists but is not executable: \(explicitPath)"
-            )
-        }
-        return ResolvedWhisperPath(path: explicitPath, source: .explicitOverride)
-    }
-
     let repoFallbackPath = repoFallbackWhisperCLIPath()
-    if ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_REPO_WHISPER_FALLBACK"] == "1" {
+    if allowTestOverride, qaRepoWhisperFallbackEnabled() {
         if FileManager.default.fileExists(atPath: repoFallbackPath) {
             guard FileManager.default.isExecutableFile(atPath: repoFallbackPath) else {
                 throw ProductRuntimeError.missingWhisperCLI(
@@ -877,13 +1201,14 @@ func resolveWhisperCLIPath(launchOptions: LaunchOptions) throws -> ResolvedWhisp
     }
 
     throw ProductRuntimeError.missingWhisperCLI(
-        "Could not resolve whisper-cli. Checked bundled path \(bundledPath), explicit override, repo fallback \(repoFallbackPath) (only when PUSHWRITE_ALLOW_REPO_WHISPER_FALLBACK=1)."
+        "Could not resolve whisper-cli at the bundled product path \(bundledPath)."
     )
 }
 
 func resolveWhisperModelPath(launchOptions: LaunchOptions) throws -> ResolvedWhisperPath {
+    let allowTestOverride = testRuntimeOverridesEnabled()
     let explicitPath = launchOptions.whisperModelPath?.trimmingCharacters(in: .whitespacesAndNewlines)
-    if ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_TEST_RUNTIME_OVERRIDE"] == "1",
+    if allowTestOverride,
        let explicitPath,
        !explicitPath.isEmpty {
         guard FileManager.default.fileExists(atPath: explicitPath) else {
@@ -897,22 +1222,15 @@ func resolveWhisperModelPath(launchOptions: LaunchOptions) throws -> ResolvedWhi
         return ResolvedWhisperPath(path: bundledPath, source: .bundledProductResource)
     }
 
-    if let explicitPath, !explicitPath.isEmpty {
-        guard FileManager.default.fileExists(atPath: explicitPath) else {
-            throw ProductRuntimeError.missingWhisperModel(explicitPath)
-        }
-        return ResolvedWhisperPath(path: explicitPath, source: .explicitOverride)
-    }
-
     let repoFallbackPath = repoFallbackWhisperModelPath()
-    if ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_REPO_WHISPER_FALLBACK"] == "1" {
+    if allowTestOverride, qaRepoWhisperFallbackEnabled() {
         if FileManager.default.fileExists(atPath: repoFallbackPath) {
             return ResolvedWhisperPath(path: repoFallbackPath, source: .repoFallback)
         }
     }
 
     throw ProductRuntimeError.missingWhisperModel(
-        "Could not resolve whisper model. Checked bundled path \(bundledPath), explicit override, repo fallback \(repoFallbackPath) (only when PUSHWRITE_ALLOW_REPO_WHISPER_FALLBACK=1)."
+        "Could not resolve the whisper model at the bundled product path \(bundledPath)."
     )
 }
 
@@ -926,17 +1244,107 @@ func resolveWhisperRuntime(launchOptions: LaunchOptions) throws -> ResolvedWhisp
 }
 
 func verifyBundledWhisperModel(at path: String) throws {
-    let url = URL(fileURLWithPath: path)
     let attributes = try FileManager.default.attributesOfItem(atPath: path)
     let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
-    guard size == 77_691_713 else {
+    guard size == bundledWhisperModelSize else {
         throw ProductRuntimeError.invalidWhisperModel("unexpected size \(size) bytes")
     }
 
-    let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-    let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    let digest = try sha256OfFile(at: path)
     guard digest == bundledWhisperModelSHA256 else {
         throw ProductRuntimeError.invalidWhisperModel("SHA-256 mismatch")
+    }
+}
+
+func resolveLocalTextRuntime(launchOptions: LaunchOptions) throws -> ResolvedLocalTextRuntime {
+    let allowTestOverride = testRuntimeOverridesEnabled()
+    let explicitCLI = optionalNonEmptyTrimmed(launchOptions.localTextCLIPath)
+    let explicitModel = optionalNonEmptyTrimmed(launchOptions.localTextModelPath)
+
+    let cli: ResolvedWhisperPath
+    if allowTestOverride, let explicitCLI {
+        guard FileManager.default.isExecutableFile(atPath: explicitCLI) else {
+            throw ProductRuntimeError.missingLocalTextCLI(explicitCLI)
+        }
+        cli = ResolvedWhisperPath(path: explicitCLI, source: .explicitOverride)
+    } else if FileManager.default.isExecutableFile(atPath: bundledLocalTextCLIPath()) {
+        cli = ResolvedWhisperPath(path: bundledLocalTextCLIPath(), source: .bundledProductResource)
+    } else if allowTestOverride,
+              qaRepoLocalTextFallbackEnabled(),
+              FileManager.default.isExecutableFile(atPath: repoFallbackLocalTextCLIPath()) {
+        cli = ResolvedWhisperPath(path: repoFallbackLocalTextCLIPath(), source: .repoFallback)
+    } else {
+        throw ProductRuntimeError.missingLocalTextCLI(bundledLocalTextCLIPath())
+    }
+
+    let model: ResolvedWhisperPath
+    if allowTestOverride, let explicitModel {
+        guard FileManager.default.fileExists(atPath: explicitModel) else {
+            throw ProductRuntimeError.missingLocalTextModel(explicitModel)
+        }
+        model = ResolvedWhisperPath(path: explicitModel, source: .explicitOverride)
+    } else if FileManager.default.fileExists(atPath: bundledLocalTextModelPath()) {
+        model = ResolvedWhisperPath(path: bundledLocalTextModelPath(), source: .bundledProductResource)
+    } else if allowTestOverride,
+              qaRepoLocalTextFallbackEnabled(),
+              FileManager.default.fileExists(atPath: repoFallbackLocalTextModelPath()) {
+        model = ResolvedWhisperPath(path: repoFallbackLocalTextModelPath(), source: .repoFallback)
+    } else {
+        throw ProductRuntimeError.missingLocalTextModel(bundledLocalTextModelPath())
+    }
+
+    if model.source == .bundledProductResource {
+        try verifyBundledLocalTextModel(at: model.path)
+    }
+    return ResolvedLocalTextRuntime(cli: cli, model: model)
+}
+
+func verifyBundledLocalTextModel(at path: String) throws {
+    let attributes = try FileManager.default.attributesOfItem(atPath: path)
+    let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+    guard size == bundledLocalTextModelSize else {
+        throw ProductRuntimeError.invalidLocalTextModel("unexpected size \(size) bytes")
+    }
+    let digest = try sha256OfFile(at: path)
+    guard digest == bundledLocalTextModelSHA256 else {
+        throw ProductRuntimeError.invalidLocalTextModel("SHA-256 mismatch")
+    }
+}
+
+func sha256OfFile(at path: String) throws -> String {
+    let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
+    defer { try? handle.close() }
+    var hasher = SHA256()
+    while true {
+        let data = try handle.read(upToCount: 4 * 1_024 * 1_024) ?? Data()
+        if data.isEmpty { break }
+        hasher.update(data: data)
+    }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+}
+
+func verifyBundledExecutable(
+    at path: String,
+    expectedPath: String,
+    expectedSHA256: String
+) throws {
+    let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+    guard standardizedPath == URL(fileURLWithPath: expectedPath).standardizedFileURL.path else {
+        throw ProductRuntimeError.invalidRequest("Bundled runtime path does not match its signed resource location.")
+    }
+    var info = stat()
+    guard lstat(standardizedPath, &info) == 0 else {
+        throw ProductRuntimeError.invalidRequest("Bundled runtime executable is missing, linked, or not a regular executable file.")
+    }
+    let actualSHA256 = try sha256OfFile(at: standardizedPath)
+    guard RuntimeExecutableIntegrityPolicy.allowsExecution(
+        isRegularFile: (info.st_mode & S_IFMT) == S_IFREG,
+        isSymbolicLink: (info.st_mode & S_IFMT) == S_IFLNK,
+        isExecutable: FileManager.default.isExecutableFile(atPath: standardizedPath),
+        actualSHA256: actualSHA256,
+        expectedSHA256: expectedSHA256
+    ) else {
+        throw ProductRuntimeError.invalidRequest("Bundled runtime executable failed its pinned SHA-256 integrity check.")
     }
 }
 
@@ -951,6 +1359,49 @@ func optionalNonEmptyTrimmed(_ value: String?) -> String? {
     }
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? nil : trimmed
+}
+
+func sanitizedChildProcessEnvironment() -> [String: String] {
+    [
+        "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
+        "TMPDIR": FileManager.default.temporaryDirectory.path,
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "LC_ALL": "C",
+    ]
+}
+
+func testRuntimeOverridesEnabled() -> Bool {
+#if PUSHWRITE_QA_CONTROL_INTERFACE
+    ProcessInfo.processInfo.environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] == "1"
+        && ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_TEST_RUNTIME_OVERRIDE"] == "1"
+#else
+    false
+#endif
+}
+
+func qaRepoWhisperFallbackEnabled() -> Bool {
+#if PUSHWRITE_QA_CONTROL_INTERFACE
+    ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_REPO_WHISPER_FALLBACK"] == "1"
+#else
+    false
+#endif
+}
+
+func qaRepoLocalTextFallbackEnabled() -> Bool {
+#if PUSHWRITE_QA_CONTROL_INTERFACE
+    ProcessInfo.processInfo.environment["PUSHWRITE_ALLOW_REPO_LOCAL_TEXT_FALLBACK"] == "1"
+#else
+    false
+#endif
+}
+
+func qaLocalTextBypassEnabled() -> Bool {
+#if PUSHWRITE_QA_CONTROL_INTERFACE
+    testRuntimeOverridesEnabled()
+        && ProcessInfo.processInfo.environment["PUSHWRITE_BYPASS_LOCAL_TEXT_TRANSFORMATION"] == "1"
+#else
+    false
+#endif
 }
 
 func trimmingTrailingLineBreaks(_ text: String) -> String {
@@ -1028,7 +1479,7 @@ func currentMicrophonePermissionStatus() -> MicrophonePermissionStatus {
         return runtimeForcedMicrophonePermissionStatus
     }
 
-    if runtimeMicrophoneDeniedOverride || ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_DENIED"] == "1" {
+    if runtimeMicrophoneDeniedOverride {
         return .denied
     }
 
@@ -1058,7 +1509,7 @@ func microphoneBlockedReason(for status: MicrophonePermissionStatus) -> String? 
 }
 
 func hasAvailableMicrophoneDevice() -> Bool {
-    if runtimeNoMicrophoneDeviceOverride || ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_NO_MICROPHONE_DEVICE"] == "1" {
+    if runtimeNoMicrophoneDeviceOverride {
         return false
     }
     if #available(macOS 14.0, *) {
@@ -1103,11 +1554,11 @@ func currentFrontmostApp() -> NSRunningApplication? {
 }
 
 func accessibilityBlockedOverrideEnabled() -> Bool {
-    runtimeAccessibilityBlockedOverride || ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_BLOCKED"] == "1"
+    runtimeAccessibilityBlockedOverride
 }
 
 func isAccessibilityTrusted(prompt: Bool) -> Bool {
-    if runtimeAccessibilityTrustedOverride || ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_ACCESSIBILITY_TRUSTED"] == "1" {
+    if runtimeAccessibilityTrustedOverride {
         return true
     }
     if accessibilityBlockedOverrideEnabled() {
@@ -1167,7 +1618,12 @@ func copyFocusedElement(from app: NSRunningApplication) -> AXUIElement? {
     copyFocusedElement(appPID: app.processIdentifier)
 }
 
-func captureFocusSnapshot(isTrusted: Bool) -> FocusSnapshot? {
+struct FocusCapture {
+    let snapshot: FocusSnapshot
+    let element: AXUIElement?
+}
+
+func captureFocus(isTrusted: Bool) -> FocusCapture? {
     guard let app = currentFrontmostApp() else {
         return nil
     }
@@ -1179,29 +1635,45 @@ func captureFocusSnapshot(isTrusted: Bool) -> FocusSnapshot? {
     )
 
     guard isTrusted, let focusedElement = copyFocusedElement(from: app) else {
-        return FocusSnapshot(
-            app: appSnapshot,
-            role: nil,
-            subrole: nil,
-            title: nil,
-            value: nil,
-            editable: nil,
-            protectedContent: false
+        return FocusCapture(
+            snapshot: FocusSnapshot(
+                app: appSnapshot,
+                role: nil,
+                subrole: nil,
+                title: nil,
+                value: nil,
+                editable: nil,
+                protectedContent: false
+            ),
+            element: nil
         )
     }
 
     let subrole = copyStringAttribute(kAXSubroleAttribute as CFString, from: focusedElement)
-    let protectedContent = subrole == (kAXSecureTextFieldSubrole as String)
-
-    return FocusSnapshot(
-        app: appSnapshot,
-        role: copyStringAttribute(kAXRoleAttribute as CFString, from: focusedElement),
-        subrole: subrole,
-        title: copyStringAttribute(kAXTitleAttribute as CFString, from: focusedElement),
-        value: nil,
-        editable: copyBooleanAttribute("AXEditable" as CFString, from: focusedElement),
-        protectedContent: protectedContent
+    let protectedContent = InsertionTargetPolicy.isProtected(
+        secureTextSubrole: subrole == (kAXSecureTextFieldSubrole as String),
+        containsProtectedContent: copyBooleanAttribute(
+            NSAccessibility.Attribute.containsProtectedContent.rawValue as CFString,
+            from: focusedElement
+        ) == true
     )
+
+    return FocusCapture(
+        snapshot: FocusSnapshot(
+            app: appSnapshot,
+            role: copyStringAttribute(kAXRoleAttribute as CFString, from: focusedElement),
+            subrole: subrole,
+            title: copyStringAttribute(kAXTitleAttribute as CFString, from: focusedElement),
+            value: nil,
+            editable: copyBooleanAttribute("AXEditable" as CFString, from: focusedElement),
+            protectedContent: protectedContent
+        ),
+        element: focusedElement
+    )
+}
+
+func captureFocusSnapshot(isTrusted: Bool) -> FocusSnapshot? {
+    captureFocus(isTrusted: isTrusted)?.snapshot
 }
 
 func validateInsertionTarget(_ focus: FocusSnapshot?) throws {
@@ -1218,6 +1690,36 @@ func validateInsertionTarget(_ focus: FocusSnapshot?) throws {
     if decision == .rejectNonEditable {
         throw ProductRuntimeError.nonEditableTarget
     }
+}
+
+func requireValidatedFocusedElement(
+    _ expectedElement: AXUIElement,
+    appPID: pid_t
+) throws -> AXUIElement {
+    guard currentFrontmostApp()?.processIdentifier == appPID,
+          let currentElement = copyFocusedElement(appPID: appPID),
+          CFEqual(expectedElement, currentElement) else {
+        throw ProductRuntimeError.textInsertionFailed("The focused target changed before insertion.")
+    }
+
+    let subrole = copyStringAttribute(kAXSubroleAttribute as CFString, from: currentElement)
+    let snapshot = FocusSnapshot(
+        app: nil,
+        role: copyStringAttribute(kAXRoleAttribute as CFString, from: currentElement),
+        subrole: subrole,
+        title: nil,
+        value: nil,
+        editable: copyBooleanAttribute("AXEditable" as CFString, from: currentElement),
+        protectedContent: InsertionTargetPolicy.isProtected(
+            secureTextSubrole: subrole == (kAXSecureTextFieldSubrole as String),
+            containsProtectedContent: copyBooleanAttribute(
+                NSAccessibility.Attribute.containsProtectedContent.rawValue as CFString,
+                from: currentElement
+            ) == true
+        )
+    )
+    try validateInsertionTarget(snapshot)
+    return currentElement
 }
 
 func copySelectedTextRange(from element: AXUIElement) -> CFRange? {
@@ -1252,11 +1754,10 @@ func setSelectedTextRange(_ range: CFRange, on element: AXUIElement) {
 func insertWithAccessibility(
     _ text: String,
     appPID: pid_t,
+    expectedElement: AXUIElement,
     allowValueReplacement: Bool
-) -> InsertRoute? {
-    guard let focusedElement = copyFocusedElement(appPID: appPID) else {
-        return nil
-    }
+) throws -> InsertRoute? {
+    let focusedElement = try requireValidatedFocusedElement(expectedElement, appPID: appPID)
     let valueBefore = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement)
     let selectedRange = copySelectedTextRange(from: focusedElement)
     let expectedValue: String?
@@ -1272,23 +1773,30 @@ func insertWithAccessibility(
     }
 
     var selectedTextSettable = DarwinBoolean(false)
+    let selectedTextElement = try requireValidatedFocusedElement(expectedElement, appPID: appPID)
     if AXUIElementIsAttributeSettable(
-        focusedElement,
+        selectedTextElement,
         kAXSelectedTextAttribute as CFString,
         &selectedTextSettable
-    ) == .success, selectedTextSettable.boolValue,
-       AXUIElementSetAttributeValue(
-           focusedElement,
-           kAXSelectedTextAttribute as CFString,
-           text as CFTypeRef
-       ) == .success {
-        usleep(30_000)
-        let valueAfter = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement)
-        if let expectedValue, valueAfter == expectedValue {
-            return .accessibilitySelectedText
+    ) == .success, selectedTextSettable.boolValue {
+        let writeElement = try requireValidatedFocusedElement(expectedElement, appPID: appPID)
+        guard CFEqual(selectedTextElement, writeElement) else {
+            throw ProductRuntimeError.textInsertionFailed("The focused target changed before insertion.")
         }
-        if expectedValue == nil, valueBefore != nil, valueAfter != valueBefore {
-            return .accessibilitySelectedText
+        if AXUIElementSetAttributeValue(
+            writeElement,
+            kAXSelectedTextAttribute as CFString,
+            text as CFTypeRef
+        ) == .success {
+        usleep(30_000)
+            let verifiedElement = try requireValidatedFocusedElement(expectedElement, appPID: appPID)
+            let valueAfter = copyStringAttribute(kAXValueAttribute as CFString, from: verifiedElement)
+            if let expectedValue, valueAfter == expectedValue {
+                return .accessibilitySelectedText
+            }
+            if expectedValue == nil, valueBefore != nil, valueAfter != valueBefore {
+                return .accessibilitySelectedText
+            }
         }
     }
 
@@ -1296,30 +1804,40 @@ func insertWithAccessibility(
         return nil
     }
     var valueSettable = DarwinBoolean(false)
+    let valueElement = try requireValidatedFocusedElement(expectedElement, appPID: appPID)
     guard AXUIElementIsAttributeSettable(
-        focusedElement,
+        valueElement,
         kAXValueAttribute as CFString,
         &valueSettable
-    ) == .success, valueSettable.boolValue,
-       AXUIElementSetAttributeValue(
-           focusedElement,
-           kAXValueAttribute as CFString,
-           expectedValue as CFTypeRef
-       ) == .success else {
+    ) == .success, valueSettable.boolValue else {
+        return nil
+    }
+    let writeElement = try requireValidatedFocusedElement(expectedElement, appPID: appPID)
+    guard CFEqual(valueElement, writeElement),
+          AXUIElementSetAttributeValue(
+              writeElement,
+              kAXValueAttribute as CFString,
+              expectedValue as CFTypeRef
+          ) == .success else {
         return nil
     }
     usleep(30_000)
-    guard copyStringAttribute(kAXValueAttribute as CFString, from: focusedElement) == expectedValue else {
+    let verifiedElement = try requireValidatedFocusedElement(expectedElement, appPID: appPID)
+    guard copyStringAttribute(kAXValueAttribute as CFString, from: verifiedElement) == expectedValue else {
         return nil
     }
     setSelectedTextRange(
         CFRange(location: selectedRange.location + text.utf16.count, length: 0),
-        on: focusedElement
+        on: verifiedElement
     )
     return .accessibilityValueReplacement
 }
 
-func postUnicodeKeyboardEvents(_ text: String) throws {
+func postUnicodeKeyboardEvents(
+    _ text: String,
+    appPID: pid_t,
+    expectedElement: AXUIElement
+) throws {
     guard let source = CGEventSource(stateID: .combinedSessionState) else {
         throw ProductRuntimeError.eventSourceUnavailable
     }
@@ -1328,9 +1846,9 @@ func postUnicodeKeyboardEvents(_ text: String) throws {
         throw ProductRuntimeError.invalidRequest("Insert requests require a non-empty text payload.")
     }
 
-    for start in stride(from: 0, to: codeUnits.count, by: 32) {
-        let end = min(start + 32, codeUnits.count)
-        var chunk = Array(codeUnits[start..<end])
+    for character in text {
+        _ = try requireValidatedFocusedElement(expectedElement, appPID: appPID)
+        var chunk = Array(String(character).utf16)
         guard
             let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
             let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
@@ -1338,15 +1856,17 @@ func postUnicodeKeyboardEvents(_ text: String) throws {
             throw ProductRuntimeError.eventCreationFailed
         }
         keyDown.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        keyDown.postToPid(appPID)
+        keyUp.postToPid(appPID)
     }
 }
 
-func insertWithUnicodeKeyboardEvents(_ text: String, appPID: pid_t) throws {
-    guard let focusedElementBefore = copyFocusedElement(appPID: appPID) else {
-        throw ProductRuntimeError.textInsertionFailed("The focused target could not be verified.")
-    }
+func insertWithUnicodeKeyboardEvents(
+    _ text: String,
+    appPID: pid_t,
+    expectedElement: AXUIElement
+) throws {
+    let focusedElementBefore = try requireValidatedFocusedElement(expectedElement, appPID: appPID)
     guard let valueBefore = copyStringAttribute(kAXValueAttribute as CFString, from: focusedElementBefore),
           let selectedRange = copySelectedTextRange(from: focusedElementBefore),
           selectedRange.location >= 0,
@@ -1359,56 +1879,45 @@ func insertWithUnicodeKeyboardEvents(_ text: String, appPID: pid_t) throws {
         with: text
     )
 
-    try postUnicodeKeyboardEvents(text)
+    try postUnicodeKeyboardEvents(text, appPID: appPID, expectedElement: expectedElement)
 
     usleep(30_000)
-    guard let focusedElementAfter = copyFocusedElement(appPID: appPID) else {
-        throw ProductRuntimeError.textInsertionFailed("The focused target changed during insertion.")
-    }
+    let focusedElementAfter = try requireValidatedFocusedElement(expectedElement, appPID: appPID)
     guard CFEqual(focusedElementBefore, focusedElementAfter),
           copyStringAttribute(kAXValueAttribute as CFString, from: focusedElementAfter) == expectedValue else {
         throw ProductRuntimeError.textInsertionFailed("The inserted text could not be verified in the focused target.")
     }
 }
 
-func insertWithOpaqueUnicodeKeyboardEvents(_ text: String, appPID: pid_t) throws {
-    guard currentFrontmostApp()?.processIdentifier == appPID else {
-        throw ProductRuntimeError.textInsertionFailed("The target application was not frontmost before insertion.")
-    }
-    try postUnicodeKeyboardEvents(text)
-    usleep(30_000)
-    guard currentFrontmostApp()?.processIdentifier == appPID else {
-        throw ProductRuntimeError.textInsertionFailed("The target application changed during insertion.")
-    }
-}
-
-func insertTextWithoutPasteboard(_ text: String, focus: FocusSnapshot?) throws -> InsertRoute {
+func insertTextWithoutPasteboard(
+    _ text: String,
+    focus: FocusSnapshot?,
+    expectedElement: AXUIElement
+) throws -> InsertRoute {
     try validateInsertionTarget(focus)
     guard let pid = focus?.app?.pid else {
         throw ProductRuntimeError.textInsertionFailed("The target application could not be identified.")
+    }
+    guard InsertionTextPolicy.allowsInsertion(text, bundleID: focus?.app?.bundleID) else {
+        throw ProductRuntimeError.textInsertionFailed(
+            "Control-character text or multiline text for an unverified destination is not inserted."
+        )
     }
     let allowsFallback = InsertionTargetPolicy.allowsUnicodeKeyboardFallback(
         editable: focus?.editable,
         role: focus?.role
     )
-    if let route = insertWithAccessibility(
+    if let route = try insertWithAccessibility(
         text,
         appPID: pid,
+        expectedElement: expectedElement,
         allowValueReplacement: allowsFallback
     ) {
         return route
     }
     if allowsFallback {
-        try insertWithUnicodeKeyboardEvents(text, appPID: pid)
+        try insertWithUnicodeKeyboardEvents(text, appPID: pid, expectedElement: expectedElement)
         return .unicodeKeyboardEvents
-    }
-    if InsertionTargetPolicy.allowsOpaqueUnicodeKeyboardFallback(
-        bundleID: focus?.app?.bundleID,
-        editable: focus?.editable,
-        role: focus?.role
-    ) {
-        try insertWithOpaqueUnicodeKeyboardEvents(text, appPID: pid)
-        return .opaqueUnicodeKeyboardEvents
     }
     throw ProductRuntimeError.nonEditableTarget
 }
@@ -1419,16 +1928,59 @@ func isProductFrontmost(_ focus: FocusSnapshot?) -> Bool {
 
 func ensureDirectory(_ path: String) throws {
     let privateDirectoryAttributes: [FileAttributeKey: Any] = [.posixPermissions: 0o700]
-    try FileManager.default.createDirectory(
-        at: URL(fileURLWithPath: path),
-        withIntermediateDirectories: true,
-        attributes: privateDirectoryAttributes
-    )
-    try FileManager.default.setAttributes(privateDirectoryAttributes, ofItemAtPath: path)
+    let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+    let homePath = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+    let anchor: String
+    if standardizedPath == homePath || standardizedPath.hasPrefix(homePath + "/") {
+        anchor = homePath
+    } else if standardizedPath == "/private/tmp" || standardizedPath.hasPrefix("/private/tmp/") {
+        anchor = "/private/tmp"
+    } else {
+        throw ProductRuntimeError.invalidRuntimeDirectory(standardizedPath)
+    }
+
+    let relative = String(standardizedPath.dropFirst(anchor.count)).split(separator: "/")
+    var current = anchor
+    for component in relative {
+        current += "/\(component)"
+        var info = stat()
+        if lstat(current, &info) == 0 {
+            guard (info.st_mode & S_IFMT) == S_IFDIR,
+                  info.st_uid == geteuid() else {
+                throw ProductRuntimeError.invalidRuntimeDirectory(current)
+            }
+        } else if errno == ENOENT {
+            try FileManager.default.createDirectory(
+                at: URL(fileURLWithPath: current),
+                withIntermediateDirectories: false,
+                attributes: privateDirectoryAttributes
+            )
+        } else {
+            throw ProductRuntimeError.invalidRuntimeDirectory(current)
+        }
+    }
+    try FileManager.default.setAttributes(privateDirectoryAttributes, ofItemAtPath: standardizedPath)
+}
+
+func validatePrivateRegularFile(_ path: String, allowMissing: Bool) throws {
+    var info = stat()
+    if lstat(path, &info) != 0 {
+        if allowMissing && errno == ENOENT { return }
+        throw ProductRuntimeError.invalidRuntimeDirectory(path)
+    }
+    guard (info.st_mode & S_IFMT) == S_IFREG,
+          info.st_uid == geteuid() else {
+        throw ProductRuntimeError.invalidRuntimeDirectory(path)
+    }
 }
 
 func diagnosticContentPersistenceEnabled() -> Bool {
-    ProcessInfo.processInfo.environment["PUSHWRITE_INCLUDE_SENSITIVE_TEST_ARTIFACTS"] == "1"
+#if PUSHWRITE_QA_CONTROL_INTERFACE
+    ProcessInfo.processInfo.environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] == "1"
+        && ProcessInfo.processInfo.environment["PUSHWRITE_INCLUDE_SENSITIVE_TEST_ARTIFACTS"] == "1"
+#else
+    false
+#endif
 }
 
 func privacySafeJSONData<T: Encodable>(_ value: T, prettyPrinted: Bool) throws -> Data {
@@ -1443,7 +1995,7 @@ func privacySafeJSONData<T: Encodable>(_ value: T, prettyPrinted: Bool) throws -
     func redacted(_ value: Any) -> Any {
         if let dictionary = value as? [String: Any] {
             return dictionary.reduce(into: [String: Any]()) { result, pair in
-                if pair.key == "text" || pair.key == "value" {
+                if PrivacySafeLog.shouldRedactField(named: pair.key) {
                     result[pair.key] = ""
                 } else {
                     result[pair.key] = redacted(pair.value)
@@ -1461,29 +2013,30 @@ func privacySafeJSONData<T: Encodable>(_ value: T, prettyPrinted: Bool) throws -
 
 func writeJSON<T: Encodable>(_ value: T, to path: String) throws {
     let data = try privacySafeJSONData(value, prettyPrinted: true)
-    try FileManager.default.createDirectory(
-        at: URL(fileURLWithPath: path).deletingLastPathComponent(),
-        withIntermediateDirectories: true,
-        attributes: nil
-    )
+    try ensureDirectory(URL(fileURLWithPath: path).deletingLastPathComponent().path)
+    try validatePrivateRegularFile(path, allowMissing: true)
     try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+    try validatePrivateRegularFile(path, allowMissing: false)
 }
 
 func appendJSONLine<T: Encodable>(_ value: T, to path: String) throws {
     let data = try privacySafeJSONData(value, prettyPrinted: false)
-    try FileManager.default.createDirectory(
-        at: URL(fileURLWithPath: path).deletingLastPathComponent(),
-        withIntermediateDirectories: true,
-        attributes: nil
-    )
+    try ensureDirectory(URL(fileURLWithPath: path).deletingLastPathComponent().path)
+    try validatePrivateRegularFile(path, allowMissing: true)
 
-    if !FileManager.default.fileExists(atPath: path) {
-        FileManager.default.createFile(atPath: path, contents: nil, attributes: nil)
+    let descriptor = open(path, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
+    guard descriptor >= 0 else {
+        throw ProductRuntimeError.invalidRuntimeDirectory(path)
     }
-
-    let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+    var info = stat()
+    guard fstat(descriptor, &info) == 0,
+          (info.st_mode & S_IFMT) == S_IFREG,
+          info.st_uid == geteuid() else {
+        close(descriptor)
+        throw ProductRuntimeError.invalidRuntimeDirectory(path)
+    }
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     defer { try? handle.close() }
-    try handle.seekToEnd()
     handle.write(data)
     handle.write(Data([0x0A]))
 }
@@ -1649,8 +2202,12 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private var pendingStopAfterRecordingStart = false
     private var activeRecordingSession: ActiveRecordingSession?
     private let minimumUsableRecordingDurationMs = 300
+#if PUSHWRITE_QA_CONTROL_INTERFACE
     private let controlInterfaceEnabled =
         ProcessInfo.processInfo.environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] == "1"
+#else
+    private let controlInterfaceEnabled = false
+#endif
 
     init(launchOptions: LaunchOptions) {
         let hotKeyConfiguration = GlobalHotKeyConfiguration.default
@@ -1766,7 +2323,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         case .notDetermined: microphoneText = "Noch nicht angefragt"
         }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "0.2.0-alpha.3"
+            ?? "0.3.0"
         return MenuBarSnapshot(
             state: state,
             statusText: statusText,
@@ -1788,16 +2345,24 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
     private func showSettings() {
         let snapshot = menuBarSnapshot()
-        let selectedLanguage = UserDefaults.standard.string(forKey: "transcriptionLanguage")
-            ?? normalizedWhisperLanguage(launchOptions.whisperLanguage)
+        let selectedInputLanguage = UserDefaults.standard.string(forKey: "inputLanguage")
+            ?? launchOptions.inputLanguage
+        let selectedOutputLanguage = UserDefaults.standard.string(forKey: "outputLanguage")
+            ?? UserDefaults.standard.string(forKey: "transcriptionLanguage")
+            ?? launchOptions.outputLanguage
         let controller = PushWriteSettingsWindowController(
             hotKeyText: snapshot.hotKeyText,
             accessibilityGranted: snapshot.accessibilityGranted,
             microphoneStatus: snapshot.microphoneStatusText,
-            selectedLanguage: selectedLanguage
+            selectedInputLanguage: selectedInputLanguage,
+            selectedOutputLanguage: selectedOutputLanguage
         )
-        controller.onTranscriptionLanguageChanged = { value in
-            UserDefaults.standard.set(value, forKey: "transcriptionLanguage")
+        controller.onInputLanguageChanged = { value in
+            UserDefaults.standard.set(value, forKey: "inputLanguage")
+        }
+        controller.onOutputLanguageChanged = { value in
+            UserDefaults.standard.set(value, forKey: "outputLanguage")
+            UserDefaults.standard.removeObject(forKey: "transcriptionLanguage")
         }
         settingsWindowController = controller
         controller.showWindow(nil)
@@ -1809,7 +2374,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         let snapshot = menuBarSnapshot()
         let alert = NSAlert()
         alert.messageText = "PushWrite \(snapshot.versionText)"
-        alert.informativeText = "Local voice input for macOS\nPowered by Whisper\n\nSprachdaten und Transkription werden lokal verarbeitet."
+        alert.informativeText = "Local voice input for macOS\nPowered by whisper.cpp and llama.cpp\n\nSpracherkennung, Schweizerdeutsch-Normalisierung und Übersetzung werden vollständig lokal verarbeitet."
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
@@ -2022,9 +2587,11 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
     private func captureReceiptObservation(promptAccessibility: Bool) -> ReceiptObservation {
         let accessibilityTrusted = isAccessibilityTrusted(prompt: promptAccessibility)
+        let focusCapture = captureFocus(isTrusted: accessibilityTrusted)
         return ReceiptObservation(
             accessibilityTrusted: accessibilityTrusted,
-            focusSnapshot: captureFocusSnapshot(isTrusted: accessibilityTrusted)
+            focusSnapshot: focusCapture?.snapshot,
+            focusElement: focusCapture?.element
         )
     }
 
@@ -2231,8 +2798,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             throw ProductRuntimeError.noMicrophoneDevice
         }
 
-        if runtimeMicrophoneRecorderStartFailureOverride ||
-            ProcessInfo.processInfo.environment["PUSHWRITE_FORCE_MICROPHONE_RECORDER_START_FAILURE"] == "1" {
+        if runtimeMicrophoneRecorderStartFailureOverride {
             throw ProductRuntimeError.microphoneRecordingStartFailed
         }
 
@@ -2248,7 +2814,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         ]
 
         do {
-            let recorder = try AVAudioRecorder(url: fileURL, settings: settings)
+            let recorder = try PushWriteAudioRecorder(url: fileURL, settings: settings)
             recorder.prepareToRecord()
 
             guard recorder.record() else {
@@ -2263,6 +2829,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 startedAt: startedAt,
                 startedAtTimestamp: isoTimestamp(),
                 focusAtStart: receiptObservation.focusSnapshot,
+                focusElementAtStart: receiptObservation.focusElement,
                 recorder: recorder,
                 requestedMicrophonePermission: requestedMicrophonePermission
             )
@@ -2287,6 +2854,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         let measuredDurationMs = max(Int((session.recorder.currentTime * 1_000.0).rounded()), 0)
         let focusAtStop = captureFocusSnapshot(isTrusted: true)
         session.recorder.stop()
+#if !PUSHWRITE_QA_CONTROL_INTERFACE
+        session.inMemoryWAVData = session.recorder.wavData()
+#endif
         logHotKeyRecordingEvent(
             flowID: session.flowID,
             event: "recording-stopped",
@@ -2659,7 +3229,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
             let receiptObservation = ReceiptObservation(
                 accessibilityTrusted: true,
-                focusSnapshot: session.focusAtStart
+                focusSnapshot: session.focusAtStart,
+                focusElement: session.focusElementAtStart
             )
             let insertResponse: ProductResponse
             do {
@@ -2910,35 +3481,77 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     ) -> TranscriptionArtifact {
         let configuredCLIPath = optionalNonEmptyTrimmed(launchOptions.whisperCLIPath) ?? bundledWhisperCLIPath()
         let configuredModelPath = optionalNonEmptyTrimmed(launchOptions.whisperModelPath) ?? bundledWhisperModelPath()
-        let configuredLanguage = normalizedWhisperLanguage(
-            UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? launchOptions.whisperLanguage
+        let allowTestRuntimeOverride = testRuntimeOverridesEnabled()
+        let configuredInputLanguageValue = allowTestRuntimeOverride
+            ? launchOptions.inputLanguage
+            : UserDefaults.standard.string(forKey: "inputLanguage") ?? launchOptions.inputLanguage
+        let configuredInputLanguage = SpokenLanguage.configured(rawValue: configuredInputLanguageValue)
+        let effectiveRecognitionLanguage = SpokenLanguage.effectiveRecognitionLanguage(
+            configured: configuredInputLanguage,
+            preferredLanguageIdentifiers: Locale.preferredLanguages
         )
+        let configuredLanguage = effectiveRecognitionLanguage.whisperLanguageCode ?? "auto"
+        let configuredOutputLanguageValue = allowTestRuntimeOverride
+            ? launchOptions.outputLanguage
+            : UserDefaults.standard.string(forKey: "outputLanguage")
+                ?? UserDefaults.standard.string(forKey: "transcriptionLanguage")
+                ?? launchOptions.outputLanguage
+        let outputLanguage = OutputLanguage.resolved(
+            configuredValue: configuredOutputLanguageValue,
+            preferredLanguageIdentifiers: Locale.preferredLanguages
+        )
+#if PUSHWRITE_QA_CONTROL_INTERFACE
         let artifactPath = paths.transcriptionArtifactFile(for: session.flowID)
         let textFilePath = paths.transcriptionTextFile(for: session.flowID)
         let rawOutputJSONPath = paths.transcriptionRawJSONFile(for: session.flowID)
+#else
+        let artifactPath = "memory://transcription/\(session.flowID)/artifact"
+        let textFilePath = "memory://transcription/\(session.flowID)/text"
+        let rawOutputJSONPath = "memory://transcription/\(session.flowID)/json"
+#endif
         let startedAt = isoTimestamp()
         let started = Date()
 
         do {
             let resolvedRuntime = try resolveWhisperRuntime(launchOptions: launchOptions)
             let cliPath = resolvedRuntime.cli.path
+            let cliResolutionSource = resolvedRuntime.cli.source.rawValue
             let modelPath = resolvedRuntime.model.path
+            let modelResolutionSource = resolvedRuntime.model.source.rawValue
+            let recordingData: Data
+#if PUSHWRITE_QA_CONTROL_INTERFACE
+            recordingData = try Data(contentsOf: URL(fileURLWithPath: recordingArtifact.filePath))
+#else
+            guard let capturedData = session.inMemoryWAVData else {
+                throw ProductRuntimeError.failedToInspectRecording("in-memory recording data is unavailable")
+            }
+            recordingData = capturedData
+#endif
+            let whisperResult = try runWhisperCLI(
+                cliPath: cliPath,
+                modelPath: modelPath,
+                recordingData: recordingData,
+                language: configuredLanguage
+            )
+            let rawTranscriptText = whisperResult.text
+            let resolvedLanguage = whisperResult.language ?? configuredLanguage
             logHotKeyRecordingEvent(
                 flowID: session.flowID,
                 event: "transcription-runtime-resolved",
-                detail: "cliSource=\(resolvedRuntime.cli.source.rawValue),modelSource=\(resolvedRuntime.model.source.rawValue),cliPath=\(cliPath),modelPath=\(modelPath)"
+                detail: "cliSource=\(cliResolutionSource),modelSource=\(modelResolutionSource),cliPath=\(cliPath),modelPath=\(modelPath)"
             )
-            let transcriptText = try runWhisperCLI(
-                cliPath: cliPath,
-                modelPath: modelPath,
-                recordingPath: recordingArtifact.filePath,
-                outputBasePath: paths.transcriptionOutputBase(for: session.flowID),
-                language: configuredLanguage
+            let detectedLanguage = SpokenLanguage.fromDetectedLanguageCode(resolvedLanguage)
+            let transformationSource = SpokenLanguage.transformationSource(
+                configured: effectiveRecognitionLanguage,
+                detected: detectedLanguage
             )
-            let resolvedLanguage = resolveTranscriptionLanguage(
-                rawOutputJSONPath: rawOutputJSONPath,
-                fallbackLanguage: configuredLanguage
+            let transformation = try runLocalTextTransformation(
+                transcript: rawTranscriptText,
+                source: transformationSource,
+                target: outputLanguage,
+                flowID: session.flowID
             )
+            let transcriptText = transformation.text
             let artifact = TranscriptionArtifact(
                 id: session.flowID,
                 recordingID: recordingArtifact.id,
@@ -2947,11 +3560,18 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 textFilePath: textFilePath,
                 rawOutputJSONPath: rawOutputJSONPath,
                 cliPath: cliPath,
-                cliResolutionSource: resolvedRuntime.cli.source.rawValue,
+                cliResolutionSource: cliResolutionSource,
                 modelPath: modelPath,
-                modelResolutionSource: resolvedRuntime.model.source.rawValue,
+                modelResolutionSource: modelResolutionSource,
                 modelName: URL(fileURLWithPath: modelPath).lastPathComponent,
                 language: resolvedLanguage,
+                configuredInputLanguage: configuredInputLanguage.rawValue,
+                outputLanguage: outputLanguage.rawValue,
+                rawTextLength: rawTranscriptText.count,
+                localTransformationApplied: true,
+                localTransformationRuntime: transformation.runtimePath,
+                localTransformationModel: URL(fileURLWithPath: transformation.modelPath).lastPathComponent,
+                localTransformationDurationMs: transformation.durationMs,
                 status: .succeeded,
                 text: transcriptText,
                 textLength: transcriptText.count,
@@ -2976,6 +3596,13 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 modelResolutionSource: "unresolved",
                 modelName: URL(fileURLWithPath: configuredModelPath).lastPathComponent,
                 language: configuredLanguage,
+                configuredInputLanguage: configuredInputLanguage.rawValue,
+                outputLanguage: outputLanguage.rawValue,
+                rawTextLength: 0,
+                localTransformationApplied: false,
+                localTransformationRuntime: nil,
+                localTransformationModel: nil,
+                localTransformationDurationMs: nil,
                 status: .failed,
                 text: "",
                 textLength: 0,
@@ -2992,36 +3619,45 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private func runWhisperCLI(
         cliPath: String,
         modelPath: String,
-        recordingPath: String,
-        outputBasePath: String,
+        recordingData: Data,
         language: String
-    ) throws -> String {
-        let textOutputPath = "\(outputBasePath).txt"
-        let rawJSONOutputPath = "\(outputBasePath).json"
-        try? FileManager.default.removeItem(atPath: textOutputPath)
-        try? FileManager.default.removeItem(atPath: rawJSONOutputPath)
-
-        var arguments = [
+    ) throws -> WhisperCLIResult {
+        let arguments = [
             "-m", modelPath,
-            "-f", recordingPath,
+            "-f", "-",
+            "-l", language,
             "-nt",
-            "-ng",
-            "-otxt",
             "-oj",
-            "-of", outputBasePath
+            "-of", "-"
         ]
-        if language != "auto" {
-            arguments.append(contentsOf: ["-l", language])
-        }
 
+        if cliPath == bundledWhisperCLIPath() {
+            try verifyBundledExecutable(
+                at: cliPath,
+                expectedPath: bundledWhisperCLIPath(),
+                expectedSHA256: bundledWhisperExecutableSHA256
+            )
+        }
+        let sandboxExecutable = "/usr/bin/sandbox-exec"
+        guard FileManager.default.isExecutableFile(atPath: sandboxExecutable) else {
+            throw ProductRuntimeError.transcriptionLaunchFailed("macOS network-denial runtime is unavailable")
+        }
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: cliPath)
-        process.arguments = arguments
+        process.executableURL = URL(fileURLWithPath: sandboxExecutable)
+        process.arguments = [
+            "-p",
+            "(version 1) (allow default) (deny network*) (deny file-write*) (allow file-write-data)",
+            cliPath,
+        ] + arguments
+        process.environment = sanitizedChildProcessEnvironment()
+        process.currentDirectoryURL = URL(fileURLWithPath: paths.recordingsDir, isDirectory: true)
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
+        let stdinPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        process.standardInput = stdinPipe
 
         do {
             try process.run()
@@ -3031,16 +3667,22 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
         stdoutPipe.fileHandleForWriting.closeFile()
         stderrPipe.fileHandleForWriting.closeFile()
+        let stdoutBuffer = ThreadSafeDataBuffer()
+        let stderrBuffer = ThreadSafeDataBuffer()
         let pipeDrainGroup = DispatchGroup()
         pipeDrainGroup.enter()
         DispatchQueue.global(qos: .utility).async {
-            _ = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            stdoutBuffer.store(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
             pipeDrainGroup.leave()
         }
         pipeDrainGroup.enter()
         DispatchQueue.global(qos: .utility).async {
-            _ = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            stderrBuffer.store(stderrPipe.fileHandleForReading.readDataToEndOfFile())
             pipeDrainGroup.leave()
+        }
+        DispatchQueue.global(qos: .utility).async {
+            stdinPipe.fileHandleForWriting.write(recordingData)
+            stdinPipe.fileHandleForWriting.closeFile()
         }
 
         let completion = DispatchSemaphore(value: 0)
@@ -3060,40 +3702,238 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         guard process.terminationStatus == 0 else {
             throw ProductRuntimeError.transcriptionProcessFailed("exit status \(process.terminationStatus)")
         }
-
-        guard FileManager.default.fileExists(atPath: textOutputPath) else {
-            throw ProductRuntimeError.missingTranscriptionOutput(textOutputPath)
+        let stdoutData = stdoutBuffer.load()
+        guard
+            let object = try? JSONSerialization.jsonObject(with: stdoutData) as? [String: Any],
+            let segments = object["transcription"] as? [[String: Any]]
+        else {
+            let diagnostic = String(data: stderrBuffer.load(), encoding: .utf8) ?? "non-JSON output"
+            throw ProductRuntimeError.transcriptionProcessFailed(
+                "whisper.cpp returned invalid JSON: \(diagnostic.prefix(240))"
+            )
         }
-        guard FileManager.default.fileExists(atPath: rawJSONOutputPath) else {
-            throw ProductRuntimeError.missingTranscriptionOutput(rawJSONOutputPath)
+        let transcript = trimmingTrailingLineBreaks(
+            segments.compactMap { $0["text"] as? String }.joined()
+        )
+        let result = object["result"] as? [String: Any]
+        let detectedLanguage = optionalNonEmptyTrimmed(result?["language"] as? String)
+        return WhisperCLIResult(text: transcript, language: detectedLanguage)
+    }
+
+    private func runLocalTextTransformation(
+        transcript: String,
+        source: SpokenLanguage,
+        target: OutputLanguage,
+        flowID: String
+    ) throws -> LocalTextTransformationResult {
+        let trimmedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        if source.canBypassLocalTransformation(to: target) {
+            return LocalTextTransformationResult(
+                text: trimmedTranscript,
+                runtimePath: "local-language-identity",
+                modelPath: "local-language-identity",
+                durationMs: 0
+            )
+        }
+        guard !trimmedTranscript.isEmpty else {
+            throw ProductRuntimeError.emptyTranscriptionOutput
+        }
+        guard trimmedTranscript.count <= 20_000 else {
+            throw ProductRuntimeError.localTextTransformationFailed(
+                "transcript exceeds the local 20,000-character processing limit"
+            )
         }
 
-        return trimmingTrailingLineBreaks(
-            try String(contentsOf: URL(fileURLWithPath: textOutputPath), encoding: .utf8)
+        if qaLocalTextBypassEnabled() {
+            return LocalTextTransformationResult(
+                text: trimmedTranscript,
+                runtimePath: "test-bypass",
+                modelPath: "test-bypass",
+                durationMs: 0
+            )
+        }
+
+        let runtime = try resolveLocalTextRuntime(launchOptions: launchOptions)
+        let fallbackStarted = Date()
+        var candidate = trimmedTranscript
+        var candidateSource = source
+        var passIndex = 0
+
+        if source != .automatic,
+           source.translationLanguageCode != target.translationLanguageCode,
+           source.translationLanguageCode != "en",
+           target.translationLanguageCode != "en" {
+            let pivotRequest = LocalTextTransformationRequest(
+                source: source,
+                target: .english,
+                transcript: candidate
+            )
+            candidate = try runLlamaInference(
+                transcriptCharacterCount: candidate.count,
+                systemPrompt: LocalTextTransformationRequest.systemPrompt,
+                prompt: pivotRequest.prompt,
+                runtime: runtime,
+                flowID: flowID,
+                passIndex: passIndex
+            )
+            candidateSource = .english
+            passIndex += 1
+        }
+
+        let finalRequest = LocalTextTransformationRequest(
+            source: candidateSource,
+            target: target,
+            transcript: candidate
+        )
+        candidate = try runLlamaInference(
+            transcriptCharacterCount: candidate.count,
+            systemPrompt: LocalTextTransformationRequest.systemPrompt,
+            prompt: finalRequest.prompt,
+            runtime: runtime,
+            flowID: flowID,
+            passIndex: passIndex
+        )
+        candidate = LocalTextTransformationOutput.corrected(candidate, for: target)
+
+        return LocalTextTransformationResult(
+            text: candidate,
+            runtimePath: runtime.cli.path,
+            modelPath: runtime.model.path,
+            durationMs: max(Int(Date().timeIntervalSince(fallbackStarted) * 1_000.0), 0)
         )
     }
 
-    private func resolveTranscriptionLanguage(rawOutputJSONPath: String, fallbackLanguage: String) -> String {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: rawOutputJSONPath)) else {
-            return fallbackLanguage
+    private func runLlamaInference(
+        transcriptCharacterCount: Int,
+        systemPrompt: String,
+        prompt: String,
+        runtime: ResolvedLocalTextRuntime,
+        flowID: String,
+        passIndex: Int
+    ) throws -> String {
+        let predictedTokens = min(max(transcriptCharacterCount / 2, 128), 4_096)
+        let llamaArguments = [
+            "--offline",
+            "--model", runtime.model.path,
+            "--system-prompt", systemPrompt,
+            "--file", "/dev/stdin",
+            "--ctx-size", "8192",
+            "--n-predict", "\(predictedTokens)",
+            "--seed", "42",
+            "--temp", "0.1",
+            "--top-k", "20",
+            "--top-p", "0.8",
+            "--repeat-penalty", "1.05",
+            "--jinja",
+            "--single-turn",
+            "--no-display-prompt",
+            "--no-perf",
+            "--no-warmup",
+            "--color", "off",
+        ]
+        let sandboxExecutable = "/usr/bin/sandbox-exec"
+        guard FileManager.default.isExecutableFile(atPath: sandboxExecutable) else {
+            throw ProductRuntimeError.localTextTransformationFailed(
+                "macOS network-denial runtime is unavailable"
+            )
         }
-        guard
-            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let result = object["result"] as? [String: Any],
-            let language = result["language"] as? String,
-            !language.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-            return fallbackLanguage
+        if runtime.cli.path == bundledLocalTextCLIPath() {
+            try verifyBundledExecutable(
+                at: runtime.cli.path,
+                expectedPath: bundledLocalTextCLIPath(),
+                expectedSHA256: bundledLocalTextExecutableSHA256
+            )
         }
-        return language
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: sandboxExecutable)
+        process.arguments = [
+            "-p",
+            "(version 1) (allow default) (deny network*) (deny file-write*) (allow file-write-data)",
+            runtime.cli.path,
+        ] + llamaArguments
+        process.environment = sanitizedChildProcessEnvironment()
+        process.currentDirectoryURL = URL(fileURLWithPath: paths.recordingsDir, isDirectory: true)
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        let stdinPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+        process.standardInput = stdinPipe
+        do {
+            try process.run()
+        } catch {
+            throw ProductRuntimeError.localTextTransformationFailed("could not launch llama.cpp: \(error)")
+        }
+
+        stdoutPipe.fileHandleForWriting.closeFile()
+        stderrPipe.fileHandleForWriting.closeFile()
+        let stdoutBuffer = ThreadSafeDataBuffer()
+        let stderrBuffer = ThreadSafeDataBuffer()
+        let pipeDrainGroup = DispatchGroup()
+        pipeDrainGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            stdoutBuffer.store(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+            pipeDrainGroup.leave()
+        }
+        pipeDrainGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            stderrBuffer.store(stderrPipe.fileHandleForReading.readDataToEndOfFile())
+            pipeDrainGroup.leave()
+        }
+        let completion = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in completion.signal() }
+        let promptData = Data(prompt.utf8)
+        DispatchQueue.global(qos: .utility).async {
+            stdinPipe.fileHandleForWriting.write(promptData)
+            stdinPipe.fileHandleForWriting.closeFile()
+        }
+        if completion.wait(timeout: .now() + 180) == .timedOut {
+            process.terminate()
+            if completion.wait(timeout: .now() + 5) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                _ = completion.wait(timeout: .now() + 2)
+            }
+            _ = pipeDrainGroup.wait(timeout: .now() + 2)
+            throw ProductRuntimeError.localTextTransformationFailed("inference exceeded the 180-second limit")
+        }
+        _ = pipeDrainGroup.wait(timeout: .now() + 2)
+        let stdoutData = stdoutBuffer.load()
+        _ = stderrBuffer.load()
+
+        guard process.terminationStatus == 0 else {
+            throw ProductRuntimeError.localTextTransformationFailed(
+                "llama.cpp exited with status \(process.terminationStatus)"
+            )
+        }
+
+        guard var transformedText = String(data: stdoutData, encoding: .utf8) else {
+            throw ProductRuntimeError.localTextTransformationFailed("llama.cpp returned non-UTF-8 output")
+        }
+        transformedText = LocalTextTransformationOutput.cleaned(transformedText)
+        guard !transformedText.isEmpty else {
+            throw ProductRuntimeError.localTextTransformationFailed("llama.cpp returned empty output")
+        }
+        let maximumOutputCharacters = max(transcriptCharacterCount * 4, 1_024)
+        guard transformedText.count <= maximumOutputCharacters else {
+            throw ProductRuntimeError.localTextTransformationFailed(
+                "output exceeded the deterministic expansion limit"
+            )
+        }
+
+        return transformedText
     }
 
     private func persistTranscriptionArtifact(_ artifact: TranscriptionArtifact) {
+#if PUSHWRITE_QA_CONTROL_INTERFACE
         do {
             try writeJSON(artifact, to: artifact.artifactPath)
         } catch {
             fputs("Could not persist transcription artifact for \(artifact.id): \(error)\n", stderr)
         }
+#else
+        _ = artifact
+#endif
     }
 
     private func persistTranscriptionResult(_ result: TranscriptionResult) throws {
@@ -3107,6 +3947,7 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeRecordingArtifact(session: ActiveRecordingSession, measuredDurationMs: Int) throws -> RecordingArtifact {
+#if PUSHWRITE_QA_CONTROL_INTERFACE
         let details = try inspectRecordingArtifact(at: session.fileURL)
         let artifact = RecordingArtifact(
             id: session.flowID,
@@ -3121,6 +3962,22 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         )
         try writeJSON(artifact, to: session.metadataURL.path)
         return artifact
+#else
+        guard let recordingData = session.inMemoryWAVData else {
+            throw ProductRuntimeError.failedToInspectRecording("in-memory recorder returned no audio data")
+        }
+        return RecordingArtifact(
+            id: session.flowID,
+            filePath: "memory://recording/\(session.flowID)",
+            metadataPath: "memory://recording/\(session.flowID)/metadata",
+            format: "wav-lpcm-16khz-mono",
+            sampleRateHz: 16_000,
+            channelCount: 1,
+            durationMs: measuredDurationMs,
+            fileSizeBytes: UInt64(recordingData.count),
+            createdAt: session.startedAtTimestamp
+        )
+#endif
     }
 
     private func makeBlockedHotKeyResponse(
@@ -3406,6 +4263,22 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         try ensureDirectory(paths.runtimeDir)
         try ensureDirectory(paths.logsDir)
         try ensureDirectory(paths.recordingsDir)
+#if !PUSHWRITE_QA_CONTROL_INTERFACE
+        let recordingsURL = URL(fileURLWithPath: paths.recordingsDir, isDirectory: true)
+        for artifactURL in try FileManager.default.contentsOfDirectory(
+            at: recordingsURL,
+            includingPropertiesForKeys: nil,
+            options: []
+        ) {
+            let artifactName = artifactURL.lastPathComponent
+            let pattern = "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}(?:\\.wav|\\.json|\\.transcription(?:\\.txt|\\.json|\\.artifact\\.json))$"
+            guard artifactName.range(of: pattern, options: .regularExpression) != nil else {
+                continue
+            }
+            try validatePrivateRegularFile(artifactURL.path, allowMissing: false)
+            try FileManager.default.removeItem(at: artifactURL)
+        }
+#endif
         if controlInterfaceEnabled {
             try ensureDirectory(paths.requestsDir)
             try ensureDirectory(paths.responsesDir)
@@ -3642,7 +4515,11 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         let pasteDelayMs = request.pasteDelayMs ?? defaults.paste
         let restoreDelayMs = request.restoreDelayMs ?? defaults.restore
         let accessibilityTrusted = receiptObservation?.accessibilityTrusted ?? isAccessibilityTrusted(prompt: request.promptAccessibility)
-        let focusAtReceipt = receiptObservation?.focusSnapshot ?? captureFocusSnapshot(isTrusted: accessibilityTrusted)
+        let directReceiptCapture = receiptObservation == nil
+            ? captureFocus(isTrusted: accessibilityTrusted)
+            : nil
+        let focusAtReceipt = receiptObservation?.focusSnapshot ?? directReceiptCapture?.snapshot
+        let focusElementAtReceipt = receiptObservation?.focusElement ?? directReceiptCapture?.element
 
         guard accessibilityTrusted else {
             if presentsBlockedUI {
@@ -3699,7 +4576,8 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         sleepMs(settleDelayMs)
-        let focusBeforePaste = captureFocusSnapshot(isTrusted: true)
+        let focusCaptureBeforePaste = captureFocus(isTrusted: true)
+        let focusBeforePaste = focusCaptureBeforePaste?.snapshot
         let pasteboard = NSPasteboard.general
         let originalPasteboardMetadata = PasteboardMetadata(
             changeCount: pasteboard.changeCount,
@@ -3708,12 +4586,22 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         let route: InsertRoute
 
         do {
-            if let receiptPID = focusAtReceipt?.app?.pid,
-               let currentPID = focusBeforePaste?.app?.pid,
-               receiptPID != currentPID {
-                throw ProductRuntimeError.textInsertionFailed("The target application changed while PushWrite was processing.")
+            let currentElement = focusCaptureBeforePaste?.element
+            let elementMatches = focusElementAtReceipt.map { receiptElement in
+                currentElement.map { CFEqual(receiptElement, $0) } ?? false
+            } ?? false
+            guard FocusTargetBindingPolicy.allowsInsertion(
+                receiptPID: focusAtReceipt?.app?.pid,
+                currentPID: focusBeforePaste?.app?.pid,
+                elementMatches: elementMatches
+            ), let expectedElement = focusElementAtReceipt else {
+                throw ProductRuntimeError.textInsertionFailed("The focused target changed while PushWrite was processing.")
             }
-            route = try insertTextWithoutPasteboard(text, focus: focusBeforePaste)
+            route = try insertTextWithoutPasteboard(
+                text,
+                focus: focusBeforePaste,
+                expectedElement: expectedElement
+            )
         } catch {
             let focusAfterFailure = captureFocusSnapshot(isTrusted: true)
             return ProductResponse(

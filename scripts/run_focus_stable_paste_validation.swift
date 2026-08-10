@@ -866,3 +866,14 @@ printContextSummary(summary.safari)
 for clipboard in summary.clipboardRestore {
     print("[002B] clipboard=\(clipboard.name) success=\(clipboard.success) insertedTextMatches=\(clipboard.insertedTextMatches) error=\(clipboard.error ?? "none")")
 }
+
+let contexts = [summary.textEdit, summary.safari]
+let contextsPassed = contexts.allSatisfy {
+    $0.runCount > 0 && $0.successCount == $0.runCount
+}
+let clipboardPassed = summary.clipboardRestore.count == 2
+    && summary.clipboardRestore.allSatisfy { $0.success && $0.insertedTextMatches }
+guard contextsPassed && clipboardPassed else {
+    fputs("Focus-stable paste validation reported one or more failed scenarios.\n", stderr)
+    exit(1)
+}

@@ -12,14 +12,14 @@ Accessibility trust is checked before focus inspection and insertion. If it is a
 
 ## Protected input
 
-Targets with secure-text subroles or protected-content metadata are rejected. Non-editable targets and a target-app change between capture and insertion are also rejected. These guards apply before both Accessibility and Unicode-event insertion. The Codex app currently exposes neither a focused AX element nor an editable role for its compose field. Its compatibility route is therefore limited to the exact bundle ID `com.openai.codex`, requires unknown editability and role, and rechecks the frontmost target PID immediately before and after posting Unicode events. Unknown applications cannot use this route.
+Targets with secure-text subroles or protected-content metadata are rejected. Non-editable targets and a target-app or focused-element change between capture and insertion are also rejected. These guards apply before both Accessibility and Unicode-event insertion. Unicode events are directed to the validated process ID, the target is revalidated between characters, and the resulting value must match. Opaque fields without a verifiable Accessibility value fail closed, including applications that do not expose their compose field through Accessibility.
 
 ## Clipboard
 
 Dictation never reads or writes transcript text through `NSPasteboard.general`. Apple states that the general pasteboard automatically participates in Universal Clipboard and provides no macOS API to control that feature: [NSPasteboard](https://developer.apple.com/documentation/appkit/nspasteboard). Avoiding the pasteboard prevents accidental cross-device propagation of dictated text.
 
-Clipboard translation is off, cannot be enabled in this build and performs no clipboard access.
+Language normalization and translation operate on the in-memory transcript and never monitor or read the clipboard.
 
 ## Entitlements
 
-The direct-distribution build requests only `com.apple.security.device.audio-input`, which permits audio input while Hardened Runtime is enabled. It also uses a microphone purpose string and the normal TCC prompt. No JIT, unsigned executable memory, library-validation exception, network, automation or sandbox exception is added.
+The direct-distribution build requests only `com.apple.security.device.audio-input`, which permits audio input while Hardened Runtime is enabled. It also uses a microphone purpose string and the normal TCC prompt. No JIT, unsigned executable memory, library-validation exception, network, automation or sandbox exception is added. The local text subprocess is additionally wrapped in a macOS sandbox profile with `deny network*`.

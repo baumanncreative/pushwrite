@@ -3,10 +3,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-OUTPUT_DIR="/tmp/pushwrite-ui-tests"
+OUTPUT_DIR="$(mktemp -d /tmp/pushwrite-ui-tests.XXXXXXXX)"
 MODULE_CACHE_DIR="$OUTPUT_DIR/module-cache"
 TEST_BINARY="$OUTPUT_DIR/PushWriteProductUITests"
 SDK_PATH="${PUSHWRITE_SDK_PATH:-$(xcrun --show-sdk-path)}"
+trap 'rm -rf "$OUTPUT_DIR"' EXIT INT TERM
 
 mkdir -p "$OUTPUT_DIR" "$MODULE_CACHE_DIR"
 

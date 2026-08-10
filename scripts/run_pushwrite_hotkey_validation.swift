@@ -4,6 +4,37 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+struct UnsafeValidationScratchPath: Error, CustomStringConvertible {
+    let path: String
+    let repoRoot: String
+
+    var description: String {
+        "Validation scratch paths must be dedicated directories under /tmp or \(repoRoot)/build: \(path)"
+    }
+}
+
+func pathEntryExistsWithoutFollowingLinks(_ path: String) -> Bool {
+    var info = stat()
+    return lstat(path, &info) == 0
+}
+
+func checkedValidationScratchPath(
+    _ path: String,
+    repoRoot: String,
+    requireAbsent: Bool
+) throws -> String {
+    let canonicalPath = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    let canonicalRepoRoot = URL(fileURLWithPath: repoRoot).standardizedFileURL.resolvingSymlinksInPath().path
+    let allowedPrefixes = ["/private/tmp/", "/tmp/", "\(canonicalRepoRoot)/build/"]
+    guard allowedPrefixes.contains(where: canonicalPath.hasPrefix) else {
+        throw UnsafeValidationScratchPath(path: canonicalPath, repoRoot: canonicalRepoRoot)
+    }
+    if requireAbsent && pathEntryExistsWithoutFollowingLinks(canonicalPath) {
+        throw UnsafeValidationScratchPath(path: canonicalPath, repoRoot: canonicalRepoRoot)
+    }
+    return canonicalPath
+}
+
 struct Options {
     var simulatedText = "PushWrite 002E simulated transcription."
     var textEditRuns = 5
@@ -386,7 +417,7 @@ func writeSummary<T: Encodable>(_ value: T, to path: String) throws {
 
 func buildProduct(repoRoot: String, outputDir: String) throws -> URL {
     let scriptPath = "\(repoRoot)/scripts/build_pushwrite_product.sh"
-    let output = try runProcess("/bin/zsh", arguments: [scriptPath, outputDir], currentDirectory: repoRoot)
+    let output = try runProcess("/bin/zsh", arguments: [scriptPath, outputDir, "--qa"], currentDirectory: repoRoot)
     let appPath = output.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !appPath.isEmpty else {
         throw ValidationError.buildFailed("Build script did not return an app path.")
@@ -399,7 +430,7 @@ func stableProductAppPath(repoRoot: String) -> String {
 }
 
 func candidateProductOutputDir(repoRoot: String) -> String {
-    "\(repoRoot)/build/pushwrite-product-candidate"
+    "\(repoRoot)/build/pushwrite-product-qa-candidate"
 }
 
 func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
@@ -411,23 +442,13 @@ func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
         return url
     }
 
-    let stableURL = URL(fileURLWithPath: stableProductAppPath(repoRoot: repoRoot))
-    if FileManager.default.fileExists(atPath: stableURL.path) {
-        return stableURL
-    }
-
     if options.skipBuild {
         throw ValidationError.controlFailed(
-            "Missing stable product app at \(stableURL.path). Build a candidate bundle with scripts/build_pushwrite_product.sh, promote it explicitly, or pass --product-app-path to validate a non-stable bundle."
+            "QA validation with --skip-build requires --product-app-path."
         )
     }
 
     let outputDir = options.productOutputDir.isEmpty ? candidateProductOutputDir(repoRoot: repoRoot) : options.productOutputDir
-    let existingBundleURL = URL(fileURLWithPath: "\(outputDir)/PushWrite.app")
-    if FileManager.default.fileExists(atPath: existingBundleURL.path) {
-        return existingBundleURL
-    }
-
     return try buildProduct(repoRoot: repoRoot, outputDir: outputDir)
 }
 
@@ -910,7 +931,7 @@ func runHotKeySeries(
         if hotKeyResponse.kind != "insertTranscription" {
             reasons.append("unexpected-kind-\(hotKeyResponse.kind)")
         }
-        if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents", "opaqueUnicodeKeyboardEvents"].contains(hotKeyResponse.insertRoute ?? "") {
+        if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(hotKeyResponse.insertRoute ?? "") {
             reasons.append("unexpected-insert-route")
         }
         if hotKeyResponse.insertSource != "transcription" {
@@ -1065,6 +1086,7 @@ func runBlockedHotKeyValidation(
 
 func main() -> Int32 {
     let repoRoot = FileManager.default.currentDirectoryPath
+    let validationRunID = UUID().uuidString.lowercased()
     var options: Options
     do {
         options = try parseOptions(arguments: Array(CommandLine.arguments.dropFirst()))
@@ -1077,10 +1099,25 @@ func main() -> Int32 {
         options.productOutputDir = candidateProductOutputDir(repoRoot: repoRoot)
     }
     if options.successRuntimeDir.isEmpty {
-        options.successRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-hotkey-success"
+        options.successRuntimeDir = "\(repoRoot)/build/validation/runtime-hotkey-success-\(validationRunID)"
     }
     if options.blockedRuntimeDir.isEmpty {
-        options.blockedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-hotkey-blocked"
+        options.blockedRuntimeDir = "\(repoRoot)/build/validation/runtime-hotkey-blocked-\(validationRunID)"
+    }
+    do {
+        options.successRuntimeDir = try checkedValidationScratchPath(
+            options.successRuntimeDir,
+            repoRoot: repoRoot,
+            requireAbsent: !options.skipLaunch
+        )
+        options.blockedRuntimeDir = try checkedValidationScratchPath(
+            options.blockedRuntimeDir,
+            repoRoot: repoRoot,
+            requireAbsent: !options.skipLaunch
+        )
+    } catch {
+        fputs("\(error)\n", stderr)
+        return 64
     }
 
     let productAppURL: URL
@@ -1098,7 +1135,6 @@ func main() -> Int32 {
         if options.skipLaunch {
             successLaunchState = try readLaunchState(runtimeDir: options.successRuntimeDir)
         } else {
-            try? FileManager.default.removeItem(atPath: options.successRuntimeDir)
             successLaunchState = try launchProduct(
                 repoRoot: repoRoot,
                 productAppPath: productAppURL.path,
@@ -1295,7 +1331,6 @@ func main() -> Int32 {
     } else {
         let blockedLaunchState: ProductState
         do {
-            try? FileManager.default.removeItem(atPath: options.blockedRuntimeDir)
             blockedLaunchState = try launchProduct(
                 repoRoot: repoRoot,
                 productAppPath: productAppURL.path,
@@ -1369,6 +1404,16 @@ func main() -> Int32 {
         return 1
     }
 
+    let contexts = [textEditSummary, safariSummary]
+    let totalRuns = contexts.reduce(0) { $0 + $1.runCount }
+    let contextsPassed = contexts.allSatisfy {
+        $0.successCount == $0.runCount && $0.failureReasons.isEmpty
+    }
+    let blockedPassed = blockedSummary?.failureReasons.isEmpty ?? options.skipBlockedValidation
+    guard totalRuns > 0, contextsPassed, blockedPassed else {
+        fputs("Hotkey validation did not execute a positive passing scenario set.\n", stderr)
+        return 1
+    }
     return 0
 }
 

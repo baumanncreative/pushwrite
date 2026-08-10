@@ -6,12 +6,12 @@ PushWrite is a local macOS menu-bar utility for system-wide push-to-talk dictati
 
 ## Current release
 
-`0.2.0-alpha.3` is the current installable ARM64 Alpha. It targets macOS 13 or newer, packages its native application, static `whisper.cpp` CLI and multilingual tiny model together, refreshes the live microphone permission state and supports the opaque Codex compose field without using the general pasteboard.
+`0.3.0` is the current installable ARM64 release. It targets macOS 13 or newer and packages the native application, `whisper.cpp`, `llama.cpp`, a multilingual Whisper model and a multilingual local text model together. It supports live permission refresh and verified Accessibility insertion without using the general pasteboard. Unverifiable opaque fields fail closed.
 
 ## Product promise
 
 - local audio capture and inference
-- no Cloud transcription or telemetry
+- no Cloud transcription, translation or telemetry
 - direct insertion without placing transcript text on the general clipboard
 - narrow, visible permission use
 - content-free routine logs and short-lived work files
@@ -20,7 +20,9 @@ PushWrite is a local macOS menu-bar utility for system-wide push-to-talk dictati
 
 - native menu-bar status and settings
 - global `Control + Option + Command + P` press-and-hold interaction
-- German, English and automatic language modes
+- automatic/fixed spoken-language modes for German (Germany, Austria and Switzerland), English, Spanish and French
+- system/fixed output-language modes for German, English, Spanish and French
+- Swiss German to Hochdeutsch normalization
 - Accessibility insertion with Unicode-event fallback
 - local error recovery and permission guidance
 
@@ -29,12 +31,10 @@ PushWrite is a local macOS menu-bar utility for system-wide push-to-talk dictati
 - Cloud processing
 - file import and batch transcription
 - history or transcript storage
-- rewriting, summarisation and prompt workflows
+- general rewriting, summarisation and prompt workflows
 - Windows, Linux, mobile and Intel artifacts
-- active clipboard translation in this Alpha
-
-The translation surface is present but disabled because the native runtime, exact model redistribution evidence and complete offline in-app validation have not all passed the release gate. There is no Cloud substitute.
+- clipboard monitoring or clipboard translation
 
 ## Technical basis
 
-The AppKit layer owns hotkey, recording, permissions, UI and insertion. `whisper.cpp` 1.8.1 owns local inference. `PushWriteCore.swift` contains deterministic state and policy logic. See the [current runtime architecture](../architecture/runtime-0.2.0-alpha.1.md).
+The AppKit layer owns hotkey, recording, permissions, UI and insertion. `whisper.cpp` 1.8.1 owns local speech recognition. `llama.cpp` b10227 and Qwen2.5 1.5B Instruct own local transcript normalization and translation. `PushWriteCore.swift` contains deterministic state, language and policy logic. See the [0.3.0 local language architecture](../architecture/local-language-processing-0.3.0.md).

@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "model": "ggml-tiny.bin",
-  "family": "OpenAI Whisper tiny multilingual",
+  "model": "ggml-large-v3-q5_0.bin",
+  "family": "OpenAI Whisper large-v3 multilingual Q5_0",
   "runtime": "whisper.cpp 1.8.1",
-  "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
-  "sha256": "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
-  "sizeBytes": 77691713,
+  "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-q5_0.bin",
+  "sha1": "e6e2ed78495d403bef4b7cff42ef4aaadcfea8de",
+  "sha256": "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1",
+  "sizeBytes": 1081140203,
   "license": "MIT"
 }

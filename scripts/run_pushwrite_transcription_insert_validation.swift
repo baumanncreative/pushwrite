@@ -4,6 +4,28 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+struct UnsafeValidationScratchPath: Error, CustomStringConvertible {
+    let path: String
+    let repoRoot: String
+
+    var description: String {
+        "Validation scratch paths must be dedicated directories under /tmp or \(repoRoot)/build: \(path)"
+    }
+}
+
+func checkedValidationScratchPath(_ path: String, repoRoot: String) throws -> String {
+    let canonicalPath = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    let canonicalRepoRoot = URL(fileURLWithPath: repoRoot).standardizedFileURL.resolvingSymlinksInPath().path
+    let allowedPrefixes = ["/private/tmp/", "/tmp/", "\(canonicalRepoRoot)/build/"]
+    guard allowedPrefixes.contains(where: canonicalPath.hasPrefix) else {
+        throw UnsafeValidationScratchPath(path: canonicalPath, repoRoot: canonicalRepoRoot)
+    }
+    guard !FileManager.default.fileExists(atPath: canonicalPath) else {
+        throw UnsafeValidationScratchPath(path: canonicalPath, repoRoot: canonicalRepoRoot)
+    }
+    return canonicalPath
+}
+
 struct Options {
     var scenario = "all"
     var productOutputDir = ""
@@ -16,6 +38,7 @@ struct Options {
     var whisperCLIPath: String?
     var whisperModelPath: String?
     var whisperLanguage = "en"
+    var outputLanguage: String?
     var transcriptionFixtureWAVPath: String?
     var resultsFile: String?
     var holdDurationMs = 900
@@ -246,6 +269,7 @@ enum ValidationError: Error, CustomStringConvertible {
     case buildFailed(String)
     case controlFailed(String)
     case appleScriptFailed(String)
+    case unsafeRuntimeDirectory(String)
     case timeout(String)
 
     var description: String {
@@ -262,6 +286,8 @@ enum ValidationError: Error, CustomStringConvertible {
             return "Product control failed: \(message)"
         case let .appleScriptFailed(message):
             return "AppleScript failed: \(message)"
+        case let .unsafeRuntimeDirectory(path):
+            return "Refusing to reuse an existing validation runtime directory: \(path)"
         case let .timeout(message):
             return "Timed out: \(message)"
         }
@@ -306,6 +332,8 @@ func parseOptions(arguments: [String]) throws -> Options {
             options.whisperModelPath = try requireValue(for: argument)
         case "--whisper-language":
             options.whisperLanguage = try requireValue(for: argument)
+        case "--output-language":
+            options.outputLanguage = try requireValue(for: argument)
         case "--transcription-fixture-wav":
             options.transcriptionFixtureWAVPath = try requireValue(for: argument)
         case "--results-file":
@@ -391,7 +419,7 @@ func stableProductAppPath(repoRoot: String) -> String {
 }
 
 func candidateProductOutputDir(repoRoot: String) -> String {
-    "\(repoRoot)/build/pushwrite-product-candidate"
+    "\(repoRoot)/build/pushwrite-product-qa-candidate"
 }
 
 func defaultWhisperCLIPath(repoRoot: String) -> String {
@@ -399,7 +427,7 @@ func defaultWhisperCLIPath(repoRoot: String) -> String {
 }
 
 func defaultWhisperModelPath(repoRoot: String) -> String {
-    "\(repoRoot)/models/ggml-tiny.bin"
+    "\(repoRoot)/models/ggml-large-v3-q5_0.bin"
 }
 
 func defaultTranscriptionFixtureWAVPath(repoRoot: String) -> String {
@@ -408,7 +436,7 @@ func defaultTranscriptionFixtureWAVPath(repoRoot: String) -> String {
 
 func buildProduct(repoRoot: String, outputDir: String) throws -> URL {
     let scriptPath = "\(repoRoot)/scripts/build_pushwrite_product.sh"
-    let output = try runProcess("/bin/zsh", arguments: [scriptPath, outputDir], currentDirectory: repoRoot)
+    let output = try runProcess("/bin/zsh", arguments: [scriptPath, outputDir, "--qa"], currentDirectory: repoRoot)
     let appPath = output.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !appPath.isEmpty else {
         throw ValidationError.buildFailed("Build script did not return an app path.")
@@ -425,13 +453,8 @@ func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
         return url
     }
 
-    let stableURL = URL(fileURLWithPath: stableProductAppPath(repoRoot: repoRoot))
-    if FileManager.default.fileExists(atPath: stableURL.path) {
-        return stableURL
-    }
-
     if options.skipBuild {
-        throw ValidationError.controlFailed("Missing stable product app at \(stableURL.path)")
+        throw ValidationError.controlFailed("QA validation with --skip-build requires --product-app-path.")
     }
 
     let outputDir = options.productOutputDir.isEmpty ? candidateProductOutputDir(repoRoot: repoRoot) : options.productOutputDir
@@ -444,6 +467,7 @@ func launchProduct(
     whisperCLIPath: String?,
     whisperModelPath: String?,
     whisperLanguage: String?,
+    outputLanguage: String? = nil,
     transcriptionFixtureWAVPath: String?,
     forceAccessibilityBlocked: Bool,
     forceAccessibilityTrusted: Bool
@@ -484,6 +508,8 @@ func launchProduct(
     environment["PUSHWRITE_ENABLE_CONTROL_INTERFACE"] = "1"
     environment["PUSHWRITE_INCLUDE_SENSITIVE_TEST_ARTIFACTS"] = "1"
     environment["PUSHWRITE_ALLOW_TEST_RUNTIME_OVERRIDE"] = "1"
+    environment["PUSHWRITE_INPUT_LANGUAGE"] = whisperLanguage ?? "en"
+    environment["PUSHWRITE_OUTPUT_LANGUAGE"] = outputLanguage ?? whisperLanguage ?? "en"
     process.environment = environment
     process.standardOutput = Pipe()
     process.standardError = Pipe()
@@ -506,17 +532,14 @@ func readState(runtimeDir: String) throws -> ProductState {
 }
 
 func stopProduct(repoRoot: String, productAppPath: String, runtimeDir: String) {
-    let scriptPath = "\(repoRoot)/scripts/control_pushwrite_product.sh"
-    _ = try? runProcess(
-        "/bin/zsh",
-        arguments: [scriptPath, "stop", "--timeout-ms", "5000", "--product-app", productAppPath, "--runtime-dir", runtimeDir],
-        currentDirectory: repoRoot
-    )
+    _ = repoRoot
+    _ = runtimeDir
+    cleanupRunningProductProcesses(productAppPath: productAppPath)
 }
 
 func cleanupRunningProductProcesses(productAppPath: String) {
     _ = productAppPath
-    let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite")
+    let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite.qa")
     for application in applications {
         application.terminate()
     }
@@ -527,9 +550,13 @@ func cleanupRunningProductProcesses(productAppPath: String) {
 
 func resetRuntimeDirectory(_ runtimeDir: String) throws {
     if FileManager.default.fileExists(atPath: runtimeDir) {
-        try FileManager.default.removeItem(atPath: runtimeDir)
+        throw ValidationError.unsafeRuntimeDirectory(runtimeDir)
     }
-    try FileManager.default.createDirectory(atPath: runtimeDir, withIntermediateDirectories: true, attributes: nil)
+    try FileManager.default.createDirectory(
+        atPath: runtimeDir,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700]
+    )
 }
 
 func runAppleScript(_ source: String) throws -> NSAppleEventDescriptor {
@@ -549,9 +576,8 @@ func ensureTextEditReady() throws {
     _ = try runAppleScript("""
     tell application "TextEdit"
       activate
-      if not (exists document 1) then
-        make new document
-      end if
+      close every document saving no
+      make new document
       set text of document 1 to ""
     end tell
     """)
@@ -632,7 +658,7 @@ func readFlowEvents(runtimeDir: String) throws -> [ProductFlowEvent] {
 
 func waitForNewHotKeyResponse(runtimeDir: String, previousID: String?) throws -> ProductResponse {
     var response: ProductResponse?
-    try waitUntil(timeoutSeconds: 30) {
+    try waitUntil(timeoutSeconds: 210) {
         response = try readLastHotKeyResponse(runtimeDir: runtimeDir)
         guard let response else {
             return false
@@ -682,13 +708,15 @@ func createFakeWhisperCLI(directory: String, transcriptText: String) throws -> S
     #!/bin/zsh
     set -euo pipefail
 
-    output_base=""
     language="en"
 
     while [[ $# -gt 0 ]]; do
       case "$1" in
         -of)
-          output_base="$2"
+          if [[ "$2" != "-" ]]; then
+            echo "expected stdout output" >&2
+            exit 64
+          fi
           shift 2
           ;;
         -l)
@@ -701,17 +729,9 @@ func createFakeWhisperCLI(directory: String, transcriptText: String) throws -> S
       esac
     done
 
-    if [[ -z "$output_base" ]]; then
-      echo "missing -of output base" >&2
-      exit 64
-    fi
-
-    cat <<'PUSHWRITE_TRANSCRIPT' > "${output_base}.txt"
-    \(transcriptText)
-    PUSHWRITE_TRANSCRIPT
-
-    cat <<EOF_JSON > "${output_base}.json"
-    {"result":{"language":"${language}"}}
+    cat >/dev/null
+    cat <<EOF_JSON
+    {"result":{"language":"${language}"},"transcription":[{"text":"\(transcriptText)"}]}
     EOF_JSON
     """
     try script.write(to: URL(fileURLWithPath: path), atomically: true, encoding: .utf8)
@@ -727,6 +747,7 @@ func runHotKeyScenario(
     whisperCLIPath: String?,
     whisperModelPath: String?,
     whisperLanguage: String?,
+    outputLanguage: String? = nil,
     transcriptionFixtureWAVPath: String?,
     forceAccessibilityBlocked: Bool,
     forceAccessibilityTrusted: Bool,
@@ -740,6 +761,7 @@ func runHotKeyScenario(
         whisperCLIPath: whisperCLIPath,
         whisperModelPath: whisperModelPath,
         whisperLanguage: whisperLanguage,
+        outputLanguage: outputLanguage,
         transcriptionFixtureWAVPath: transcriptionFixtureWAVPath,
         forceAccessibilityBlocked: forceAccessibilityBlocked,
         forceAccessibilityTrusted: forceAccessibilityTrusted
@@ -778,6 +800,7 @@ func runSuccessScenario(
     whisperCLIPath: String,
     whisperModelPath: String,
     whisperLanguage: String,
+    outputLanguage: String? = nil,
     transcriptionFixtureWAVPath: String
 ) throws -> ScenarioSummary {
     let observation = try runHotKeyScenario(
@@ -788,6 +811,7 @@ func runSuccessScenario(
         whisperCLIPath: whisperCLIPath,
         whisperModelPath: whisperModelPath,
         whisperLanguage: whisperLanguage,
+        outputLanguage: outputLanguage,
         transcriptionFixtureWAVPath: transcriptionFixtureWAVPath,
         forceAccessibilityBlocked: false,
         forceAccessibilityTrusted: true,
@@ -809,7 +833,7 @@ func runSuccessScenario(
     if response.gatedTranscriptionFeedback != nil {
         failureReasons.append("unexpected-gated-feedback")
     }
-    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents", "opaqueUnicodeKeyboardEvents"].contains(response.insertRoute ?? "") {
+    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(response.insertRoute ?? "") {
         failureReasons.append("unexpected-insert-route")
     }
     if response.insertSource != "transcription" {
@@ -907,7 +931,9 @@ func runGatedScenario(
     transcriptText: String,
     expectedGate: TranscriptionInsertGate
 ) throws -> ScenarioSummary {
-    let fakeCLIDir = "/tmp/pushwrite-product-tools/\(name)"
+    let fakeCLIDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("pushwrite-fake-cli-\(name)-\(UUID().uuidString.lowercased())", isDirectory: true)
+        .path
     let fakeCLIPath = try createFakeWhisperCLI(directory: fakeCLIDir, transcriptText: transcriptText)
 
     let observation = try runHotKeyScenario(
@@ -1169,6 +1195,7 @@ func runInferenceFailureScenario(
 
 func main() -> Int32 {
     let repoRoot = FileManager.default.currentDirectoryPath
+    let validationRunID = UUID().uuidString.lowercased()
     var options: Options
     do {
         options = try parseOptions(arguments: Array(CommandLine.arguments.dropFirst()))
@@ -1178,19 +1205,29 @@ func main() -> Int32 {
     }
 
     if options.successRuntimeDir.isEmpty {
-        options.successRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002k-success"
+        options.successRuntimeDir = "\(repoRoot)/build/validation/runtime-002k-success-\(validationRunID)"
     }
     if options.gatedEmptyRuntimeDir.isEmpty {
-        options.gatedEmptyRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002k-gated-empty"
+        options.gatedEmptyRuntimeDir = "\(repoRoot)/build/validation/runtime-002k-gated-empty-\(validationRunID)"
     }
     if options.gatedTooShortRuntimeDir.isEmpty {
-        options.gatedTooShortRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002k-gated-too-short"
+        options.gatedTooShortRuntimeDir = "\(repoRoot)/build/validation/runtime-002k-gated-too-short-\(validationRunID)"
     }
     if options.blockedRuntimeDir.isEmpty {
-        options.blockedRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002k-blocked"
+        options.blockedRuntimeDir = "\(repoRoot)/build/validation/runtime-002k-blocked-\(validationRunID)"
     }
     if options.inferenceFailureRuntimeDir.isEmpty {
-        options.inferenceFailureRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime-002k-inference-failure"
+        options.inferenceFailureRuntimeDir = "\(repoRoot)/build/validation/runtime-002k-inference-failure-\(validationRunID)"
+    }
+    do {
+        options.successRuntimeDir = try checkedValidationScratchPath(options.successRuntimeDir, repoRoot: repoRoot)
+        options.gatedEmptyRuntimeDir = try checkedValidationScratchPath(options.gatedEmptyRuntimeDir, repoRoot: repoRoot)
+        options.gatedTooShortRuntimeDir = try checkedValidationScratchPath(options.gatedTooShortRuntimeDir, repoRoot: repoRoot)
+        options.blockedRuntimeDir = try checkedValidationScratchPath(options.blockedRuntimeDir, repoRoot: repoRoot)
+        options.inferenceFailureRuntimeDir = try checkedValidationScratchPath(options.inferenceFailureRuntimeDir, repoRoot: repoRoot)
+    } catch {
+        fputs("\(error)\n", stderr)
+        return 64
     }
 
     let productAppURL: URL
@@ -1256,6 +1293,7 @@ func main() -> Int32 {
                 whisperCLIPath: whisperCLIPath,
                 whisperModelPath: whisperModelPath,
                 whisperLanguage: options.whisperLanguage,
+                outputLanguage: options.outputLanguage,
                 transcriptionFixtureWAVPath: transcriptionFixtureWAVPath
             ))
         } catch {
@@ -1274,7 +1312,7 @@ func main() -> Int32 {
                 whisperModelPath: whisperModelPath,
                 whisperLanguage: options.whisperLanguage,
                 transcriptText: "   ",
-                expectedGate: .whitespaceOnlyTranscriptionText
+                expectedGate: .emptyTranscriptionText
             ))
         } catch {
             fputs("Empty gate validation failed: \(error)\n", stderr)
@@ -1346,6 +1384,7 @@ func main() -> Int32 {
             whisperCLIPath: whisperCLIPath,
             whisperModelPath: whisperModelPath,
             whisperLanguage: options.whisperLanguage,
+            outputLanguage: options.outputLanguage,
             transcriptionFixtureWAVPath: transcriptionFixtureWAVPath
         )
     } catch {
@@ -1365,7 +1404,7 @@ func main() -> Int32 {
             whisperModelPath: whisperModelPath,
             whisperLanguage: options.whisperLanguage,
             transcriptText: "   ",
-            expectedGate: .whitespaceOnlyTranscriptionText
+            expectedGate: .emptyTranscriptionText
         )
     } catch {
         fputs("Empty gate validation failed: \(error)\n", stderr)

@@ -4,6 +4,37 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+struct UnsafeValidationScratchPath: Error, CustomStringConvertible {
+    let path: String
+    let repoRoot: String
+
+    var description: String {
+        "Validation scratch paths must be dedicated directories under /tmp or \(repoRoot)/build: \(path)"
+    }
+}
+
+func pathEntryExistsWithoutFollowingLinks(_ path: String) -> Bool {
+    var info = stat()
+    return lstat(path, &info) == 0
+}
+
+func checkedValidationScratchPath(
+    _ path: String,
+    repoRoot: String,
+    requireAbsent: Bool
+) throws -> String {
+    let canonicalPath = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    let canonicalRepoRoot = URL(fileURLWithPath: repoRoot).standardizedFileURL.resolvingSymlinksInPath().path
+    let allowedPrefixes = ["/private/tmp/", "/tmp/", "\(canonicalRepoRoot)/build/"]
+    guard allowedPrefixes.contains(where: canonicalPath.hasPrefix) else {
+        throw UnsafeValidationScratchPath(path: canonicalPath, repoRoot: canonicalRepoRoot)
+    }
+    if requireAbsent && pathEntryExistsWithoutFollowingLinks(canonicalPath) {
+        throw UnsafeValidationScratchPath(path: canonicalPath, repoRoot: canonicalRepoRoot)
+    }
+    return canonicalPath
+}
+
 struct Options {
     var payload = "PushWrite 002D test aeoeue ss EUR."
     var textEditRuns = 20
@@ -172,7 +203,30 @@ struct ValidationSummary: Codable {
     let textEdit: ContextSummary
     let safari: ContextSummary
     let clipboardRestore: [ClipboardTestResult]
+    let samePIDFocusSubstitution: FocusSubstitutionTestResult?
     let eventsLogFile: String
+}
+
+struct ValidationProductRequest: Codable {
+    let id: String
+    let kind: String
+    let text: String
+    let restoreClipboard: Bool
+    let promptAccessibility: Bool
+    let settleDelayMs: UInt32
+    let pasteDelayMs: UInt32?
+    let restoreDelayMs: UInt32?
+}
+
+struct FocusSubstitutionTestResult: Codable {
+    let success: Bool
+    let responseFailedClosed: Bool
+    let sameProcessObserved: Bool
+    let differentElementsObserved: Bool
+    let firstDocumentUnchanged: Bool
+    let secondDocumentUnchanged: Bool
+    let productResponse: ProductResponse
+    let failureReasons: [String]
 }
 
 enum ValidationError: Error, CustomStringConvertible {
@@ -338,7 +392,7 @@ func readAppleScriptString(_ source: String) throws -> String {
 
 func buildProduct(repoRoot: String, outputDir: String) throws -> URL {
     let scriptPath = "\(repoRoot)/scripts/build_pushwrite_product.sh"
-    let output = try runProcess("/bin/zsh", arguments: [scriptPath, outputDir], currentDirectory: repoRoot)
+    let output = try runProcess("/bin/zsh", arguments: [scriptPath, outputDir, "--qa"], currentDirectory: repoRoot)
     let appPath = output.trimmingCharacters(in: .whitespacesAndNewlines)
     return URL(fileURLWithPath: appPath)
 }
@@ -348,7 +402,7 @@ func stableProductAppPath(repoRoot: String) -> String {
 }
 
 func candidateProductOutputDir(repoRoot: String) -> String {
-    "\(repoRoot)/build/pushwrite-product-candidate"
+    "\(repoRoot)/build/pushwrite-product-qa-candidate"
 }
 
 func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
@@ -360,23 +414,13 @@ func resolveProductApp(repoRoot: String, options: Options) throws -> URL {
         return url
     }
 
-    let stableURL = URL(fileURLWithPath: stableProductAppPath(repoRoot: repoRoot))
-    if FileManager.default.fileExists(atPath: stableURL.path) {
-        return stableURL
-    }
-
     if options.skipBuild {
         throw ValidationError.controlFailed(
-            "Missing stable product app at \(stableURL.path). Build a candidate bundle with scripts/build_pushwrite_product.sh, promote it explicitly, or pass --product-app-path to validate a non-stable bundle."
+            "QA validation with --skip-build requires --product-app-path."
         )
     }
 
     let outputDir = options.productOutputDir.isEmpty ? candidateProductOutputDir(repoRoot: repoRoot) : options.productOutputDir
-    let existingBundleURL = URL(fileURLWithPath: "\(outputDir)/PushWrite.app")
-    if FileManager.default.fileExists(atPath: existingBundleURL.path) {
-        return existingBundleURL
-    }
-
     return try buildProduct(repoRoot: repoRoot, outputDir: outputDir)
 }
 
@@ -497,7 +541,7 @@ func stopProduct(repoRoot: String, productAppPath: String, runtimeDir: String) {
 }
 
 func cleanupRunningProductProcesses() {
-    let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite")
+    let applications = NSRunningApplication.runningApplications(withBundleIdentifier: "ch.baumanncreative.pushwrite.qa")
     for application in applications {
         application.terminate()
     }
@@ -791,7 +835,7 @@ func runContextSeries(
             reasons.append("unexpected-kind-\(productResponse.kind)")
         }
 
-        if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents", "opaqueUnicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
+        if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
             reasons.append("unexpected-insert-route")
         }
 
@@ -925,7 +969,7 @@ func runClipboardRestoreProbe(
     if productResponse.kind != "insertTranscription" {
         failures.append("unexpected-kind-\(productResponse.kind)")
     }
-    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents", "opaqueUnicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
+    if !["accessibilitySelectedText", "accessibilityValueReplacement", "unicodeKeyboardEvents"].contains(productResponse.insertRoute ?? "") {
         failures.append("unexpected-insert-route")
     }
     if productResponse.insertSource != "transcription" {
@@ -943,6 +987,130 @@ func runClipboardRestoreProbe(
     )
 }
 
+func readTextEditDocument(named name: String) throws -> String {
+    try readAppleScriptString("""
+    tell application "TextEdit"
+      if not (exists document "\(escapeAppleScriptString(name))") then
+        error "Missing validation document \(escapeAppleScriptString(name))"
+      end if
+      return text of document "\(escapeAppleScriptString(name))"
+    end tell
+    """)
+}
+
+func runSamePIDFocusSubstitutionProbe(
+    payload: String,
+    runtimeDir: String
+) throws -> FocusSubstitutionTestResult {
+    let token = UUID().uuidString.lowercased()
+    let firstName = "pushwrite-focus-a-\(token).txt"
+    let secondName = "pushwrite-focus-b-\(token).txt"
+    let firstPath = "\(runtimeDir)/\(firstName)"
+    let secondPath = "\(runtimeDir)/\(secondName)"
+    let firstSentinel = "FOCUS_A_\(token)"
+    let secondSentinel = "FOCUS_B_\(token)"
+    let fileManager = FileManager.default
+
+    try fileManager.createDirectory(
+        at: URL(fileURLWithPath: runtimeDir),
+        withIntermediateDirectories: true,
+        attributes: nil
+    )
+    try Data(firstSentinel.utf8).write(to: URL(fileURLWithPath: firstPath), options: .atomic)
+    try Data(secondSentinel.utf8).write(to: URL(fileURLWithPath: secondPath), options: .atomic)
+
+    defer {
+        _ = try? runAppleScript("""
+        tell application "TextEdit"
+          if exists document "\(escapeAppleScriptString(firstName))" then close document "\(escapeAppleScriptString(firstName))" saving no
+          if exists document "\(escapeAppleScriptString(secondName))" then close document "\(escapeAppleScriptString(secondName))" saving no
+        end tell
+        """)
+        try? fileManager.removeItem(atPath: firstPath)
+        try? fileManager.removeItem(atPath: secondPath)
+    }
+
+    _ = try runAppleScript("""
+    tell application "TextEdit"
+      set firstDocument to open POSIX file "\(escapeAppleScriptString(firstPath))"
+      set secondDocument to open POSIX file "\(escapeAppleScriptString(secondPath))"
+      set text of firstDocument to "\(escapeAppleScriptString(firstSentinel))"
+      set text of secondDocument to "\(escapeAppleScriptString(secondSentinel))"
+      set index of window of firstDocument to 1
+      activate
+    end tell
+    """)
+    Thread.sleep(forTimeInterval: 0.5)
+
+    let requestID = UUID().uuidString
+    let request = ValidationProductRequest(
+        id: requestID,
+        kind: "insertTranscription",
+        text: payload,
+        restoreClipboard: true,
+        promptAccessibility: false,
+        settleDelayMs: 3_000,
+        pasteDelayMs: nil,
+        restoreDelayMs: nil
+    )
+    let requestPath = "\(runtimeDir)/requests/\(requestID).json"
+    let responsePath = "\(runtimeDir)/responses/\(requestID).json"
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(request).write(to: URL(fileURLWithPath: requestPath), options: .atomic)
+
+    try waitUntil(timeoutSeconds: 10) {
+        (try? readLaunchState(runtimeDir: runtimeDir).isProcessing) == true
+    }
+    Thread.sleep(forTimeInterval: 0.75)
+
+    _ = try runAppleScript("""
+    tell application "TextEdit"
+      set index of window of document "\(escapeAppleScriptString(secondName))" to 1
+      activate
+    end tell
+    """)
+
+    try waitUntil(timeoutSeconds: 10) {
+        fileManager.fileExists(atPath: responsePath)
+    }
+    let response = try JSONDecoder().decode(
+        ProductResponse.self,
+        from: Data(contentsOf: URL(fileURLWithPath: responsePath))
+    )
+    let firstValue = try readTextEditDocument(named: firstName)
+    let secondValue = try readTextEditDocument(named: secondName)
+
+    let responseFailedClosed = response.status == "failed"
+        && response.insertRoute == nil
+        && response.error?.contains("focused target changed") == true
+    let receiptPID = response.focusAtReceipt?.app?.pid
+    let beforePID = response.focusBeforePaste?.app?.pid
+    let sameProcessObserved = receiptPID != nil && receiptPID == beforePID
+    let differentElementsObserved = response.focusAtReceipt?.value == firstSentinel
+        && response.focusBeforePaste?.value == secondSentinel
+    let firstDocumentUnchanged = firstValue == firstSentinel
+    let secondDocumentUnchanged = secondValue == secondSentinel
+
+    var failureReasons: [String] = []
+    if !responseFailedClosed { failureReasons.append("request-did-not-fail-closed") }
+    if !sameProcessObserved { failureReasons.append("same-process-switch-not-observed") }
+    if !differentElementsObserved { failureReasons.append("distinct-focused-elements-not-observed") }
+    if !firstDocumentUnchanged { failureReasons.append("first-document-mutated") }
+    if !secondDocumentUnchanged { failureReasons.append("second-document-mutated") }
+
+    return FocusSubstitutionTestResult(
+        success: failureReasons.isEmpty,
+        responseFailedClosed: responseFailedClosed,
+        sameProcessObserved: sameProcessObserved,
+        differentElementsObserved: differentElementsObserved,
+        firstDocumentUnchanged: firstDocumentUnchanged,
+        secondDocumentUnchanged: secondDocumentUnchanged,
+        productResponse: response,
+        failureReasons: failureReasons
+    )
+}
+
 func writeSummary(_ summary: ValidationSummary, to path: String) throws {
     let url = URL(fileURLWithPath: path)
     try FileManager.default.createDirectory(
@@ -956,6 +1124,7 @@ func writeSummary(_ summary: ValidationSummary, to path: String) throws {
 }
 
 let repoRoot = FileManager.default.currentDirectoryPath
+let validationRunID = UUID().uuidString.lowercased()
 var options: Options
 do {
     options = try parseOptions(arguments: Array(CommandLine.arguments.dropFirst()))
@@ -968,7 +1137,17 @@ if options.productOutputDir.isEmpty {
     options.productOutputDir = candidateProductOutputDir(repoRoot: repoRoot)
 }
 if options.productRuntimeDir.isEmpty {
-    options.productRuntimeDir = "\(repoRoot)/build/pushwrite-product/runtime"
+    options.productRuntimeDir = "\(repoRoot)/build/validation/runtime-product-\(validationRunID)"
+}
+do {
+    options.productRuntimeDir = try checkedValidationScratchPath(
+        options.productRuntimeDir,
+        repoRoot: repoRoot,
+        requireAbsent: !options.skipLaunch
+    )
+} catch {
+    fputs("\(error)\n", stderr)
+    exit(64)
 }
 
 let productAppURL: URL
@@ -985,7 +1164,6 @@ do {
         launchState = try readLaunchState(runtimeDir: options.productRuntimeDir)
     } else {
         cleanupRunningProductProcesses()
-        try? FileManager.default.removeItem(atPath: options.productRuntimeDir)
         launchState = try launchProduct(
             repoRoot: repoRoot,
             productAppPath: productAppURL.path,
@@ -1086,6 +1264,7 @@ guard preflight.productAccessibilityTrusted else {
             textEdit: ContextSummary(name: "textedit", runCount: 0, successCount: 0, strictSuccessRule: strictObservedInsertionSuccessRule(), productResponseSucceededCount: 0, observedTargetValueMatchesCount: 0, failureReasons: [:], focusAtReceiptTargetAppCount: 0, focusBeforeTargetAppCount: 0, focusAfterTargetAppCount: 0, productFrontmostAtReceiptCount: 0, productFrontmostBeforePasteCount: 0, productFrontmostAfterPasteCount: 0, records: []),
             safari: ContextSummary(name: "safari", runCount: 0, successCount: 0, strictSuccessRule: strictObservedInsertionSuccessRule(), productResponseSucceededCount: 0, observedTargetValueMatchesCount: 0, failureReasons: [:], focusAtReceiptTargetAppCount: 0, focusBeforeTargetAppCount: 0, focusAfterTargetAppCount: 0, productFrontmostAtReceiptCount: 0, productFrontmostBeforePasteCount: 0, productFrontmostAfterPasteCount: 0, records: []),
             clipboardRestore: [],
+            samePIDFocusSubstitution: nil,
             eventsLogFile: "\(options.productRuntimeDir)/logs/events.jsonl"
         )
         try? writeSummary(placeholderSummary, to: resultsFile)
@@ -1173,6 +1352,17 @@ do {
     exit(1)
 }
 
+let samePIDFocusSubstitution: FocusSubstitutionTestResult
+do {
+    samePIDFocusSubstitution = try runSamePIDFocusSubstitutionProbe(
+        payload: options.payload,
+        runtimeDir: options.productRuntimeDir
+    )
+} catch {
+    fputs("Same-PID focus substitution probe failed: \(error)\n", stderr)
+    exit(1)
+}
+
 let summary = ValidationSummary(
     timestamp: isoTimestamp(),
     payload: options.payload,
@@ -1186,6 +1376,7 @@ let summary = ValidationSummary(
     textEdit: textEditSummary,
     safari: safariSummary,
     clipboardRestore: [plainClipboardResult, richClipboardResult],
+    samePIDFocusSubstitution: samePIDFocusSubstitution,
     eventsLogFile: "\(options.productRuntimeDir)/logs/events.jsonl"
 )
 
@@ -1225,12 +1416,17 @@ printContextSummary(summary.safari)
 for clipboard in summary.clipboardRestore {
     print("[002D] clipboard=\(clipboard.name) success=\(clipboard.success) insertedTextMatches=\(clipboard.insertedTextMatches) error=\(clipboard.error ?? "none")")
 }
+if let focusSubstitution = summary.samePIDFocusSubstitution {
+    print("[002D] samePIDFocusSubstitution success=\(focusSubstitution.success) failedClosed=\(focusSubstitution.responseFailedClosed) sameProcess=\(focusSubstitution.sameProcessObserved) differentElements=\(focusSubstitution.differentElementsObserved)")
+}
 
 let allContextsPassed = [summary.textEdit, summary.safari].allSatisfy {
     $0.successCount == $0.runCount && $0.failureReasons.isEmpty
 }
 let allClipboardProbesPassed = summary.clipboardRestore.allSatisfy(\.success)
-if !allContextsPassed || !allClipboardProbesPassed {
+let focusSubstitutionPassed = summary.samePIDFocusSubstitution?.success == true
+let totalContextRuns = summary.textEdit.runCount + summary.safari.runCount
+if totalContextRuns == 0 || !allContextsPassed || !allClipboardProbesPassed || !focusSubstitutionPassed {
     fputs("Product compatibility validation failed.\n", stderr)
     exit(1)
 }
