@@ -140,7 +140,9 @@ fi
 
 mkdir -m 700 "$SCRATCH_ROOT/fake-bin"
 /bin/cp /usr/bin/true "$SCRATCH_ROOT/fake-bin/cmake"
-if PATH="$SCRATCH_ROOT/fake-bin:/usr/bin:/bin" "$ROOT_DIR/scripts/resolve_verified_cmake.sh" >/dev/null 2>&1; then
+if /usr/bin/env -u PUSHWRITE_CMAKE_BIN -u PUSHWRITE_CMAKE_SHA256 \
+  PATH="$SCRATCH_ROOT/fake-bin:/usr/bin:/bin" \
+  "$ROOT_DIR/scripts/resolve_verified_cmake.sh" >/dev/null 2>&1; then
   echo "CMake resolver accepted an unsigned PATH executable." >&2
   exit 1
 fi
