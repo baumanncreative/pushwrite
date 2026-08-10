@@ -130,7 +130,7 @@ run_case \
   german-to-english \
   de-DE \
   en \
-  "Heute um 17 Uhr habe ich Zeit für einen Termin, und morgen treffe ich Anna Meyer." \
+  "Heute um 17 Uhr habe ich Zeit. Morgen habe ich einen Termin mit Anna Meyer." \
   'today' '(17|5:00 ?PM)' 'time' '(appointment|meeting)' 'tomorrow' 'Anna' 'Meyer'
 run_case \
   english-to-spanish \
