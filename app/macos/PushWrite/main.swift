@@ -3,7 +3,13 @@ import ApplicationServices
 import AVFoundation
 import Carbon
 import CryptoKit
+import Darwin
 import Foundation
+
+private extension Notification.Name {
+    static let pushWriteShowStatus = Notification.Name("ch.baumanncreative.pushwrite.show-status")
+    static let pushWriteInstanceAcknowledged = Notification.Name("ch.baumanncreative.pushwrite.instance-acknowledged")
+}
 
 enum ProductRequestKind: String, Codable {
     case preflight
@@ -369,6 +375,15 @@ final class ThreadSafeDataBuffer: @unchecked Sendable {
 
 #if PUSHWRITE_QA_CONTROL_INTERFACE
 typealias PushWriteAudioRecorder = AVAudioRecorder
+
+private extension AVAudioRecorder {
+    var normalizedLevel: Double {
+        updateMeters()
+        let decibels = peakPower(forChannel: 0)
+        guard decibels.isFinite else { return 0 }
+        return max(0, min(1, Double((decibels + 50) / 50)))
+    }
+}
 #else
 final class PushWriteAudioRecorder {
     private let engine = AVAudioEngine()
@@ -384,6 +399,18 @@ final class PushWriteAudioRecorder {
             return 0
         }
         return max(Date().timeIntervalSince(recordingStartedAt), 0)
+    }
+
+    var normalizedLevel: Double {
+        sampleLock.lock()
+        defer { sampleLock.unlock() }
+        guard !monoSamples.isEmpty else { return 0 }
+        let sampleCount = min(monoSamples.count, 2_048)
+        let recentSamples = monoSamples.suffix(sampleCount)
+        let meanSquare = recentSamples.reduce(0.0) { partial, sample in
+            partial + Double(sample * sample)
+        } / Double(sampleCount)
+        return max(0, min(sqrt(meanSquare) * 7, 1))
     }
 
     func prepareToRecord() {}
@@ -710,6 +737,7 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
     case invalidLocalTextModel(String)
     case localTextTransformationFailed(String)
     case invalidRuntimeDirectory(String)
+    case instanceLockFailed(String)
     case missingTranscriptionFixture(String)
     case failedToInspectRecording(String)
     case failedToReplaceRecordingArtifact(String)
@@ -763,6 +791,8 @@ enum ProductRuntimeError: Error, CustomStringConvertible {
             return "Local transcript normalization or translation failed: \(message)"
         case let .invalidRuntimeDirectory(path):
             return "The configured runtime directory is not an allowed PushWrite runtime location: \(path)"
+        case let .instanceLockFailed(message):
+            return "PushWrite could not establish its single-instance lock: \(message)"
         case let .missingTranscriptionFixture(path):
             return "Transcription fixture WAV is missing at \(path)."
         case let .failedToInspectRecording(message):
@@ -924,10 +954,7 @@ func parseLaunchOptions(arguments: [String]) throws -> LaunchOptions {
     if runtimeDir.isEmpty {
         runtimeDir = productionRuntimeDir
     } else {
-        let canonicalRuntimeDir = URL(fileURLWithPath: runtimeDir)
-            .standardizedFileURL
-            .resolvingSymlinksInPath()
-            .path
+        let canonicalRuntimeDir = canonicalPathResolvingExistingAncestors(runtimeDir)
         let canonicalWorkingDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .standardizedFileURL
             .resolvingSymlinksInPath()
@@ -1928,7 +1955,7 @@ func isProductFrontmost(_ focus: FocusSnapshot?) -> Bool {
 
 func ensureDirectory(_ path: String) throws {
     let privateDirectoryAttributes: [FileAttributeKey: Any] = [.posixPermissions: 0o700]
-    let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+    let standardizedPath = canonicalPathResolvingExistingAncestors(path)
     let homePath = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
     let anchor: String
     if standardizedPath == homePath || standardizedPath.hasPrefix(homePath + "/") {
@@ -1960,6 +1987,25 @@ func ensureDirectory(_ path: String) throws {
         }
     }
     try FileManager.default.setAttributes(privateDirectoryAttributes, ofItemAtPath: standardizedPath)
+}
+
+func canonicalPathResolvingExistingAncestors(_ path: String) -> String {
+    var existingAncestor = URL(fileURLWithPath: path).standardizedFileURL
+    var missingComponents: [String] = []
+    while !FileManager.default.fileExists(atPath: existingAncestor.path),
+          existingAncestor.path != "/" {
+        missingComponents.append(existingAncestor.lastPathComponent)
+        existingAncestor.deleteLastPathComponent()
+    }
+    var resolved = existingAncestor.resolvingSymlinksInPath()
+    for component in missingComponents.reversed() {
+        resolved.appendPathComponent(component, isDirectory: true)
+    }
+    let canonicalPath = resolved.standardizedFileURL.path
+    if canonicalPath == "/tmp" || canonicalPath.hasPrefix("/tmp/") {
+        return "/private\(canonicalPath)"
+    }
+    return canonicalPath
 }
 
 func validatePrivateRegularFile(_ path: String, allowMissing: Bool) throws {
@@ -2196,6 +2242,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private var blockedWindowController: ProductFeedbackWindowController?
     private var menuBarController: PushWriteMenuBarController?
     private var settingsWindowController: PushWriteSettingsWindowController?
+    private var activationObserver: NSObjectProtocol?
+    private var instanceLockFileDescriptor: Int32 = -1
+    private var runtimeWasPrepared = false
     private var launchBlockedUIHasBeenPresented = false
     private var isHotKeyHeld = false
     private var isAwaitingMicrophonePermission = false
@@ -2244,14 +2293,43 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
+            if try !acquireInstanceLock() {
+                observeActivationRequests()
+                if !handOffToExistingInstanceIfNeeded() {
+                    presentStartupError(ProductRuntimeError.instanceLockFailed("another process owns the lock but could not be activated"))
+                }
+                NSApp.terminate(nil)
+                return
+            }
+        } catch {
+            fputs("Product startup failed: \(error)\n", stderr)
+            presentStartupError(error)
+            NSApp.terminate(nil)
+            return
+        }
+
+        observeActivationRequests()
+        if waitForUncoordinatedInstanceToExit() == false {
+            presentExistingInstanceConflict()
+            NSApp.terminate(nil)
+            return
+        }
+
+        do {
             try prepareRuntime()
+            runtimeWasPrepared = true
             registerGlobalHotKey()
             configureMenuBar()
             try writeState(running: true)
         } catch {
             fputs("Product startup failed: \(error)\n", stderr)
+            presentStartupError(error)
             NSApp.terminate(nil)
             return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.menuBarController?.showPopover()
         }
 
         if !isAccessibilityTrusted(prompt: false) {
@@ -2268,13 +2346,19 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         updateMenuBar()
-        try? writeState(running: true)
+        if runtimeWasPrepared {
+            try? writeState(running: true)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         pollTimer?.invalidate()
         recordingWatchdog?.invalidate()
         unregisterGlobalHotKey()
+        if let activationObserver {
+            DistributedNotificationCenter.default().removeObserver(activationObserver)
+            self.activationObserver = nil
+        }
         if let activeRecordingSession {
             activeRecordingSession.recorder.stop()
             if !diagnosticContentPersistenceEnabled() {
@@ -2283,7 +2367,176 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             }
             self.activeRecordingSession = nil
         }
-        try? writeState(running: false)
+        if runtimeWasPrepared {
+            try? writeState(running: false)
+        }
+        releaseInstanceLock()
+    }
+
+    private func handOffToExistingInstanceIfNeeded() -> Bool {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return false }
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        guard let existing = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            .first(where: { $0.processIdentifier != currentPID }) else {
+            return false
+        }
+
+        let currentBundleURL = Bundle.main.bundleURL.standardizedFileURL
+        let sameBundlePath = existing.bundleURL?.standardizedFileURL == currentBundleURL
+        if sameBundlePath {
+            let center = DistributedNotificationCenter.default()
+            let requestID = UUID().uuidString
+            let expectedVersion = instanceVersionIdentity()
+            var acknowledged = false
+            let acknowledgementObserver = center.addObserver(
+                forName: .pushWriteInstanceAcknowledged,
+                object: bundleIdentifier,
+                queue: .main
+            ) { notification in
+                guard notification.userInfo?["requestID"] as? String == requestID,
+                      notification.userInfo?["version"] as? String == expectedVersion else {
+                    return
+                }
+                acknowledged = true
+            }
+            center.post(
+                name: .pushWriteShowStatus,
+                object: bundleIdentifier,
+                userInfo: ["requestID": requestID]
+            )
+            let deadline = Date().addingTimeInterval(1.2)
+            while !acknowledged, Date() < deadline {
+                RunLoop.current.run(until: min(Date().addingTimeInterval(0.05), deadline))
+            }
+            center.removeObserver(acknowledgementObserver)
+            if acknowledged {
+                existing.activate(options: [.activateIgnoringOtherApps])
+                return true
+            }
+        }
+
+        presentExistingInstanceConflict()
+        return true
+    }
+
+    private func presentExistingInstanceConflict() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Eine andere PushWrite-Version läuft bereits"
+        alert.informativeText = "Beenden Sie die bereits laufende PushWrite-Version, bevor Sie diese Version starten. So greifen nie zwei Versionen gleichzeitig auf Mikrofon, Tastenkombination und Laufzeitdaten zu."
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    private func instanceVersionIdentity() -> String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        let executableDigest = Bundle.main.executableURL
+            .flatMap { try? sha256OfFile(at: $0.path) }
+            ?? "digest-unavailable"
+        return "\(version)-\(build)-\(executableDigest)"
+    }
+
+    private func acquireInstanceLock() throws -> Bool {
+        guard instanceLockFileDescriptor < 0 else { return true }
+        let bundleIdentifier = Bundle.main.bundleIdentifier ?? "ch.baumanncreative.pushwrite"
+        let lockDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(bundleIdentifier, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: lockDirectory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let lockURL = lockDirectory.appendingPathComponent("instance.lock", isDirectory: false)
+        let descriptor = Darwin.open(lockURL.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
+        guard descriptor >= 0 else {
+            throw ProductRuntimeError.instanceLockFailed(String(cString: strerror(errno)))
+        }
+
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0,
+              (metadata.st_mode & S_IFMT) == S_IFREG,
+              metadata.st_uid == geteuid() else {
+            let message = String(cString: strerror(errno))
+            Darwin.close(descriptor)
+            throw ProductRuntimeError.instanceLockFailed(message)
+        }
+        guard fchmod(descriptor, mode_t(0o600)) == 0 else {
+            let message = String(cString: strerror(errno))
+            Darwin.close(descriptor)
+            throw ProductRuntimeError.instanceLockFailed(message)
+        }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            let lockError = errno
+            Darwin.close(descriptor)
+            if lockError == EWOULDBLOCK || lockError == EAGAIN {
+                return false
+            }
+            throw ProductRuntimeError.instanceLockFailed(String(cString: strerror(lockError)))
+        }
+
+        instanceLockFileDescriptor = descriptor
+        return true
+    }
+
+    private func releaseInstanceLock() {
+        guard instanceLockFileDescriptor >= 0 else { return }
+        flock(instanceLockFileDescriptor, LOCK_UN)
+        Darwin.close(instanceLockFileDescriptor)
+        instanceLockFileDescriptor = -1
+    }
+
+    private func waitForUncoordinatedInstanceToExit() -> Bool {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return true }
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let otherInstances = {
+            NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+                .filter { $0.processIdentifier != currentPID && !$0.isTerminated }
+        }
+        guard !otherInstances().isEmpty else { return true }
+
+        let deadline = Date().addingTimeInterval(1.5)
+        while Date() < deadline, !otherInstances().isEmpty {
+            RunLoop.current.run(until: min(Date().addingTimeInterval(0.05), deadline))
+        }
+        return otherInstances().isEmpty
+    }
+
+    private func observeActivationRequests() {
+        let center = DistributedNotificationCenter.default()
+        if let activationObserver {
+            center.removeObserver(activationObserver)
+        }
+        activationObserver = center.addObserver(
+            forName: .pushWriteShowStatus,
+            object: Bundle.main.bundleIdentifier,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            self.menuBarController?.showPopover()
+            if let requestID = notification.userInfo?["requestID"] as? String,
+               let bundleIdentifier = Bundle.main.bundleIdentifier {
+                center.post(
+                    name: .pushWriteInstanceAcknowledged,
+                    object: bundleIdentifier,
+                    userInfo: [
+                        "requestID": requestID,
+                        "version": self.instanceVersionIdentity(),
+                    ]
+                )
+            }
+        }
+    }
+
+    private func presentStartupError(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "PushWrite konnte nicht gestartet werden"
+        alert.informativeText = "Die lokalen Komponenten konnten nicht vorbereitet werden.\n\nTechnische Angabe: \(error)"
+        alert.addButton(withTitle: "Beenden")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     private func configureMenuBar() {
@@ -2292,7 +2545,6 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         controller.onOpenAccessibilitySettings = { [weak self] in self?.openAccessibilitySettings() }
         controller.onMicrophoneAction = { [weak self] in self?.handleMicrophonePermissionAction() }
         controller.onShowSettings = { [weak self] in self?.showSettings() }
-        controller.onShowAbout = { [weak self] in self?.showAbout() }
         controller.onQuit = { NSApp.terminate(nil) }
         menuBarController = controller
     }
@@ -2300,19 +2552,32 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
     private func menuBarSnapshot() -> MenuBarSnapshot {
         let state: MenuBarPresentationState
         let statusText: String
+        let workflowStage: WorkflowPresentationStage
         switch flowSnapshot.state {
         case .recording:
             state = .recording
             statusText = "Aufnahme läuft"
-        case .processing, .transcribing, .inserting:
+            workflowStage = .recording
+        case .processing:
             state = .processing
             statusText = "Verarbeitung läuft"
+            workflowStage = .transforming
+        case .transcribing:
+            state = .processing
+            statusText = "Transkription läuft"
+            workflowStage = .transcribing
+        case .inserting:
+            state = .processing
+            statusText = "Text wird eingefügt"
+            workflowStage = .inserting
         case .blocked, .error:
             state = .attention
             statusText = "Handlungsbedarf"
+            workflowStage = .attention
         case .idle, .triggered, .done:
             state = (hotKeyState.registered && isAccessibilityTrusted(prompt: false)) ? .ready : .attention
             statusText = state == .ready ? "Bereit" : "Berechtigung prüfen"
+            workflowStage = state == .ready ? .ready : .attention
         }
 
         let microphoneText: String
@@ -2323,14 +2588,24 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
         case .notDetermined: microphoneText = "Noch nicht angefragt"
         }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "0.3.1"
+            ?? "0.3.2"
+        let inputLanguage = UserDefaults.standard.string(forKey: "inputLanguage")
+            ?? launchOptions.inputLanguage
+        let outputLanguage = UserDefaults.standard.string(forKey: "outputLanguage")
+            ?? UserDefaults.standard.string(forKey: "transcriptionLanguage")
+            ?? launchOptions.outputLanguage
         return MenuBarSnapshot(
             state: state,
             statusText: statusText,
             hotKeyText: hotKeyConfiguration.displayString,
             accessibilityGranted: isAccessibilityTrusted(prompt: false),
             microphoneStatusText: microphoneText,
-            versionText: version
+            versionText: version,
+            recordingElapsed: activeRecordingSession?.recorder.currentTime ?? 0,
+            audioLevel: activeRecordingSession?.recorder.normalizedLevel ?? 0,
+            inputLanguageText: LanguageSettingsCatalog.inputTitle(for: inputLanguage),
+            outputLanguageText: LanguageSettingsCatalog.outputTitle(for: outputLanguage),
+            workflowStage: workflowStage
         )
     }
 
@@ -2345,6 +2620,16 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
     private func showSettings() {
         let snapshot = menuBarSnapshot()
+        if let controller = settingsWindowController {
+            controller.updatePermissions(
+                accessibilityGranted: snapshot.accessibilityGranted,
+                microphoneStatus: snapshot.microphoneStatusText
+            )
+            controller.showWindow(nil)
+            controller.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
         let selectedInputLanguage = UserDefaults.standard.string(forKey: "inputLanguage")
             ?? launchOptions.inputLanguage
         let selectedOutputLanguage = UserDefaults.standard.string(forKey: "outputLanguage")
@@ -2355,14 +2640,17 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
             accessibilityGranted: snapshot.accessibilityGranted,
             microphoneStatus: snapshot.microphoneStatusText,
             selectedInputLanguage: selectedInputLanguage,
-            selectedOutputLanguage: selectedOutputLanguage
+            selectedOutputLanguage: selectedOutputLanguage,
+            versionText: snapshot.versionText
         )
         controller.onInputLanguageChanged = { value in
             UserDefaults.standard.set(value, forKey: "inputLanguage")
+            self.updateMenuBar()
         }
         controller.onOutputLanguageChanged = { value in
             UserDefaults.standard.set(value, forKey: "outputLanguage")
             UserDefaults.standard.removeObject(forKey: "transcriptionLanguage")
+            self.updateMenuBar()
         }
         settingsWindowController = controller
         controller.showWindow(nil)
@@ -2815,6 +3103,9 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             let recorder = try PushWriteAudioRecorder(url: fileURL, settings: settings)
+#if PUSHWRITE_QA_CONTROL_INTERFACE
+            recorder.isMeteringEnabled = true
+#endif
             recorder.prepareToRecord()
 
             guard recorder.record() else {
@@ -3545,6 +3836,18 @@ final class PushWriteAppDelegate: NSObject, NSApplicationDelegate {
                 configured: effectiveRecognitionLanguage,
                 detected: detectedLanguage
             )
+            DispatchQueue.main.sync {
+                self.transitionFlow(
+                    to: .processing,
+                    id: session.flowID,
+                    trigger: .globalHotKey,
+                    textLength: rawTranscriptText.count,
+                    recordingDurationMs: recordingArtifact.durationMs,
+                    recordingFilePath: recordingArtifact.filePath,
+                    microphonePermissionStatus: .granted,
+                    requestedMicrophonePermission: session.requestedMicrophonePermission
+                )
+            }
             let transformation = try runLocalTextTransformation(
                 transcript: rawTranscriptText,
                 source: transformationSource,

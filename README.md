@@ -2,7 +2,7 @@
 
 **Local voice input for macOS — fully offline**
 
-PushWrite `0.3.1` is a native menu-bar app for local push-to-talk dictation on Apple-Silicon Macs. Hold `Control + Option + Command + P`, speak, then release: PushWrite records locally, transcribes with bundled `whisper.cpp`, normalizes or translates the transcript with bundled `llama.cpp` and inserts the result into the focused editable field without placing text on the general pasteboard.
+PushWrite `0.3.2` is a native menu-bar app for local push-to-talk dictation on Apple-Silicon Macs. Hold `Control + Option + Command + P`, speak, then release: PushWrite records locally, transcribes with bundled `whisper.cpp`, normalizes or translates the transcript with bundled `llama.cpp` and inserts the result into the focused editable field without placing text on the general pasteboard.
 
 ## Release status
 
@@ -67,7 +67,7 @@ The SDK override is only needed on machines whose active Command Line Tools SDK 
 
 ## Install
 
-Open the DMG, drag `PushWrite.app` to `/Applications`, start it once and choose **Done** in the initial Gatekeeper warning. Then use **Open Anyway** under System Settings → Privacy & Security and grant the requested permissions. The GitHub direct-download build is explicitly marked `-unsigned` and is not Apple-notarized. It is built on GitHub Actions with Sigstore-backed provenance and published as an immutable release. A separate authenticated builder remains available for Developer-ID-signed and notarized artifacts. See [docs/installing.md](docs/installing.md).
+Open the DMG, drag `PushWrite.app` to `/Applications`, start it once and choose **Done** in the initial Gatekeeper warning. Then use **Open Anyway** under System Settings → Privacy & Security and grant the requested permissions. The prepared GitHub direct-download build is explicitly marked `-unsigned` and is not Apple-notarized. Its publication workflow builds it on GitHub Actions with Sigstore-backed provenance and requires an immutable release plus explicit acknowledgement of the unsigned fallback. A separate authenticated builder remains available for Developer-ID-signed and notarized artifacts. See [docs/installing.md](docs/installing.md).
 
 ## Repository layout
 

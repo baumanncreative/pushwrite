@@ -1,6 +1,6 @@
 # Roadmap
 
-## 0.3.1 — current
+## 0.3.2 — release candidate
 
 - ARM64 macOS 13+ menu-bar release
 - local push-to-talk recording and multilingual Whisper transcription
@@ -11,6 +11,9 @@
 - separate automatic/fixed spoken-language and system/fixed output-language controls
 - explicit United States labeling for English input and output
 - Gatekeeper override instructions included directly in the unsigned DMG
+- company-handbook-aligned status popover with live recording feedback
+- one settings entry point in the top-right gear and a bottom-left quit action
+- single-instance protection and clean app-bundle replacement guidance
 
 ## Next release
 
@@ -18,6 +21,7 @@
 - validate first installation on a clean macOS 13 user account
 - expand the real app matrix and repeated-use soak coverage
 - avoid per-request Whisper and local text-model startup if measured latency requires in-process runtimes
+- decide whether the workflow visualization remains in the compact popover
 
 ## Later, not scheduled
 

@@ -249,6 +249,33 @@ if /usr/bin/strings "$INSTALLED_EXECUTABLE_PATH" | /usr/bin/grep -F 'PUSHWRITE_'
   exit 1
 fi
 
+UPGRADE_ROOT="$RUNTIME_ROOT/upgrade"
+UPGRADE_APPLICATIONS="$UPGRADE_ROOT/Applications"
+UPGRADE_SUPPORT="$UPGRADE_ROOT/Application Support/PushWrite"
+UPGRADE_APP="$UPGRADE_APPLICATIONS/PushWrite.app"
+mkdir -m 700 -p "$UPGRADE_APPLICATIONS" "$UPGRADE_SUPPORT"
+/usr/bin/ditto "$INSTALLED_APP_PATH" "$UPGRADE_APP"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.3.1' "$UPGRADE_APP/Contents/Info.plist"
+/usr/bin/touch "$UPGRADE_APP/Contents/Resources/stale-from-0.3.1"
+/usr/bin/touch "$UPGRADE_SUPPORT/settings-preserved"
+case "$UPGRADE_APP" in
+  "$RUNTIME_ROOT"/upgrade/Applications/PushWrite.app)
+    rm -rf "$UPGRADE_APP"
+    ;;
+  *)
+    echo "Refusing unsafe clean-replacement target: $UPGRADE_APP" >&2
+    exit 64
+    ;;
+esac
+/usr/bin/ditto "$INSTALLED_APP_PATH" "$UPGRADE_APP"
+if [[ -e "$UPGRADE_APP/Contents/Resources/stale-from-0.3.1" ]] \
+  || [[ ! -e "$UPGRADE_SUPPORT/settings-preserved" ]] \
+  || [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$UPGRADE_APP/Contents/Info.plist")" != "$EXPECTED_VERSION" ]]; then
+  echo "Clean replacement did not remove stale bundle data while preserving application support." >&2
+  exit 1
+fi
+/usr/bin/codesign --verify --deep --strict "$UPGRADE_APP"
+
 BEFORE_PIDS=("${(@f)$(/usr/bin/pgrep -x "$INSTALLED_EXECUTABLE" 2>/dev/null || true)}")
 /usr/bin/open -n "$INSTALLED_APP_PATH"
 LAUNCHED_PID=""
@@ -290,6 +317,8 @@ app_icon_verified=true
 runtime_dependencies_verified=true
 production_qa_markers_absent=true
 launchservices_smoke_passed=true
+clean_bundle_replacement_passed=true
+application_support_preserved=true
 RESULTS
 fi
 
@@ -306,3 +335,5 @@ printf '%s\n' "app_icon_verified=true"
 printf '%s\n' "runtime_dependencies_verified=true"
 printf '%s\n' "production_qa_markers_absent=true"
 printf '%s\n' "launchservices_smoke_passed=true"
+printf '%s\n' "clean_bundle_replacement_passed=true"
+printf '%s\n' "application_support_preserved=true"
