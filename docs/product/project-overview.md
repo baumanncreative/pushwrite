@@ -6,7 +6,7 @@ PushWrite is a local macOS menu-bar utility for system-wide push-to-talk dictati
 
 ## Current release
 
-`0.3.1` is the current installable ARM64 release. It targets macOS 13 or newer and packages the native application, `whisper.cpp`, `llama.cpp`, a multilingual Whisper model and a multilingual local text model together. It supports live permission refresh and verified Accessibility insertion without using the general pasteboard. Unverifiable opaque fields fail closed.
+`0.3.2` is the current ARM64 release candidate. It targets macOS 13 or newer and packages the native application, `whisper.cpp`, `llama.cpp`, a multilingual Whisper model and a multilingual local text model together. It supports live permission refresh, a visible status popover, single-instance protection and verified Accessibility insertion without using the general pasteboard. Unverifiable opaque fields fail closed.
 
 ## Product promise
 

@@ -12,7 +12,12 @@ enum PushWriteProductUITests {
             hotKeyText: "Control+Option+Command+P",
             accessibilityGranted: true,
             microphoneStatusText: "Noch nicht angefragt",
-            versionText: "0.3.1"
+            versionText: "0.3.2",
+            recordingElapsed: 0,
+            audioLevel: 0,
+            inputLanguageText: "Automatisch erkennen",
+            outputLanguageText: "System",
+            workflowStage: .attention
         )
         let refreshed = MenuBarSnapshot(
             state: .ready,
@@ -20,7 +25,12 @@ enum PushWriteProductUITests {
             hotKeyText: "Control+Option+Command+P",
             accessibilityGranted: true,
             microphoneStatusText: "Erlaubt",
-            versionText: "0.3.1"
+            versionText: "0.3.2",
+            recordingElapsed: 18,
+            audioLevel: 0.7,
+            inputLanguageText: "Deutsch (Schweiz / Schweizerdeutsch)",
+            outputLanguageText: "Deutsch",
+            workflowStage: .recording
         )
 
         let controller = PushWriteMenuBarController(initialSnapshot: initial)
@@ -30,7 +40,7 @@ enum PushWriteProductUITests {
             return refreshed
         }
 
-        controller.menuWillOpen(NSMenu())
+        controller.refreshSnapshotForTesting()
 
         guard refreshCount == 1 else {
             fputs("Expected the menu to refresh its permission snapshot exactly once.\n", stderr)
@@ -55,6 +65,27 @@ enum PushWriteProductUITests {
             exit(1)
         }
 
-        print("PushWriteProductUITests: 3 passed")
+        guard controller.settingsActionCountForTesting == 1 else {
+            fputs("Settings must have exactly one action in the popover.\n", stderr)
+            exit(1)
+        }
+
+        guard controller.quitActionCountForTesting == 1 else {
+            fputs("The popover must have exactly one quit action.\n", stderr)
+            exit(1)
+        }
+
+        guard controller.workflowStepCountForTesting == 4 else {
+            fputs("The 0.3.2 workflow must expose four visual stages.\n", stderr)
+            exit(1)
+        }
+
+        guard LanguageSettingsCatalog.inputTitle(for: "de-CH") == "Deutsch (Schweiz / Schweizerdeutsch)",
+              LanguageSettingsCatalog.outputTitle(for: "auto") == "System" else {
+            fputs("Language values must resolve to their user-facing labels.\n", stderr)
+            exit(1)
+        }
+
+        print("PushWriteProductUITests: 7 passed")
     }
 }

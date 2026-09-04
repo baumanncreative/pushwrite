@@ -2,9 +2,20 @@
 
 All notable changes are documented here.
 
-## [Unreleased]
+## [0.3.2] - 2026-09-04
 
-No unreleased changes.
+### Added
+
+- a brand-aligned status popover with live recording duration, audio level, workflow state, language summary and permission status
+- visible launch and startup-error feedback for the menu-bar application
+- single-instance coordination that reopens an existing installation and blocks parallel conflicting versions
+- clean replacement validation for upgrades from an existing application bundle
+
+### Changed
+
+- made the red top-right gear the only settings entry point and moved `PushWrite beenden` to the bottom-left action position
+- aligned colors and typography with the baumanncreative company handbook
+- clarified that an existing PushWrite process and app bundle must be removed before copying a new release
 
 ## [0.3.1] - 2026-08-10
 

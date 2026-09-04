@@ -94,17 +94,46 @@ fi
 
 mkdir -p "${RESULTS_FILE:h}"
 
+cleanup_validation_run() {
+  local state_file="$RUNTIME_ROOT/product-state.json"
+  local product_pid=""
+  local state_app_path=""
+  local state_bundle_id=""
+  if [[ -f "$state_file" ]]; then
+    product_pid="$(plutil -extract pid raw -o - "$state_file" 2>/dev/null || true)"
+    state_app_path="$(plutil -extract appPath raw -o - "$state_file" 2>/dev/null || true)"
+    state_bundle_id="$(plutil -extract bundleID raw -o - "$state_file" 2>/dev/null || true)"
+    if [[ "$product_pid" == <-> && "$state_app_path" == "$PRODUCT_APP_PATH" && "$state_bundle_id" == "ch.baumanncreative.pushwrite.qa" ]]; then
+      kill -TERM "$product_pid" 2>/dev/null || true
+    fi
+  fi
+  osascript <<'APPLESCRIPT' >/dev/null 2>&1 || true
+tell application "TextEdit"
+  set validationNames to name of every document
+  repeat with validationName in validationNames
+    set validationNameText to validationName as text
+    if validationNameText is "pushwrite-validation-main.txt" or validationNameText starts with "pushwrite-focus-" then
+      if exists document validationNameText then close document validationNameText saving no
+    end if
+  end repeat
+end tell
+APPLESCRIPT
+}
+trap cleanup_validation_run EXIT INT TERM
+
 "$ROOT_DIR/scripts/control_pushwrite_product.sh" \
   launch \
   --force-accessibility-trusted \
   --product-app "$PRODUCT_APP_PATH" \
   --runtime-dir "$RUNTIME_ROOT" >/dev/null
 
-exec "$ROOT_DIR/scripts/run_pushwrite_product_validation.sh" \
+validation_result=0
+"$ROOT_DIR/scripts/run_pushwrite_product_validation.sh" \
   --product-app-path "$PRODUCT_APP_PATH" \
   --skip-build \
   --skip-launch \
   --textedit-runs "$TEXTEDIT_RUNS" \
   --safari-runs "$SAFARI_RUNS" \
   --product-runtime-dir "$RUNTIME_ROOT" \
-  --results-file "$RESULTS_FILE"
+  --results-file "$RESULTS_FILE" || validation_result=$?
+exit "$validation_result"

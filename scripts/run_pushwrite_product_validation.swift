@@ -390,6 +390,10 @@ func readAppleScriptString(_ source: String) throws -> String {
     return result.stringValue ?? ""
 }
 
+func readAppleScriptBoolean(_ source: String) throws -> Bool {
+    try runAppleScript(source).booleanValue
+}
+
 func buildProduct(repoRoot: String, outputDir: String) throws -> URL {
     let scriptPath = "\(repoRoot)/scripts/build_pushwrite_product.sh"
     let output = try runProcess("/bin/zsh", arguments: [scriptPath, outputDir, "--qa"], currentDirectory: repoRoot)
@@ -502,13 +506,39 @@ func readLaunchState(runtimeDir: String) throws -> ProductState {
     return try JSONDecoder().decode(ProductState.self, from: data)
 }
 
-func runPreflight(repoRoot: String, productAppPath: String, runtimeDir: String, prompt: Bool) throws -> ProductResponse {
-    var arguments = ["preflight", "--timeout-ms", "15000"]
-    if prompt {
-        arguments.append("--prompt-accessibility")
+func sendProductRequest(
+    runtimeDir: String,
+    kind: String,
+    text: String = "",
+    restoreClipboard: Bool = false,
+    promptAccessibility: Bool = false,
+    settleDelayMs: UInt32 = 150,
+    timeoutSeconds: TimeInterval = 15
+) throws -> ProductResponse {
+    let requestID = UUID().uuidString
+    let request = ValidationProductRequest(
+        id: requestID,
+        kind: kind,
+        text: text,
+        restoreClipboard: restoreClipboard,
+        promptAccessibility: promptAccessibility,
+        settleDelayMs: settleDelayMs,
+        pasteDelayMs: nil,
+        restoreDelayMs: nil
+    )
+    let requestURL = URL(fileURLWithPath: "\(runtimeDir)/requests/\(requestID).json")
+    let responseURL = URL(fileURLWithPath: "\(runtimeDir)/responses/\(requestID).json")
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(request).write(to: requestURL, options: .atomic)
+    try waitUntil(timeoutSeconds: timeoutSeconds) {
+        FileManager.default.fileExists(atPath: responseURL.path)
     }
-    let output = try runControl(repoRoot: repoRoot, productAppPath: productAppPath, runtimeDir: runtimeDir, arguments: arguments)
-    return try JSONDecoder().decode(ProductResponse.self, from: Data(output.utf8))
+    return try JSONDecoder().decode(ProductResponse.self, from: Data(contentsOf: responseURL))
+}
+
+func runPreflight(repoRoot: String, productAppPath: String, runtimeDir: String, prompt: Bool) throws -> ProductResponse {
+    try sendProductRequest(runtimeDir: runtimeDir, kind: "preflight", promptAccessibility: prompt)
 }
 
 func runInsertTranscription(
@@ -518,26 +548,20 @@ func runInsertTranscription(
     text: String,
     restoreClipboard: Bool
 ) throws -> ProductResponse {
-    var arguments = [
-        "insert-transcription",
-        "--text", text,
-        "--timeout-ms", "15000"
-    ]
-    if restoreClipboard {
-        arguments.append("--restore-clipboard")
-    }
-
-    let output = try runControl(repoRoot: repoRoot, productAppPath: productAppPath, runtimeDir: runtimeDir, arguments: arguments)
-    return try JSONDecoder().decode(ProductResponse.self, from: Data(output.utf8))
+    try sendProductRequest(
+        runtimeDir: runtimeDir,
+        kind: "insertTranscription",
+        text: text,
+        restoreClipboard: restoreClipboard
+    )
 }
 
 func stopProduct(repoRoot: String, productAppPath: String, runtimeDir: String) {
-    _ = try? runControl(
-        repoRoot: repoRoot,
-        productAppPath: productAppPath,
-        runtimeDir: runtimeDir,
-        arguments: ["stop", "--timeout-ms", "5000"]
-    )
+    guard (try? readLaunchState(runtimeDir: runtimeDir).running) == true else { return }
+    _ = try? sendProductRequest(runtimeDir: runtimeDir, kind: "shutdown", timeoutSeconds: 5)
+    _ = try? waitUntil(timeoutSeconds: 5) {
+        (try? readLaunchState(runtimeDir: runtimeDir).running) == false
+    }
 }
 
 func cleanupRunningProductProcesses() {
@@ -612,14 +636,57 @@ func clearAndWriteRichClipboardProbe() throws {
     pasteboard.writeObjects([item])
 }
 
-func ensureTextEditReady() throws {
+var textEditValidationDocumentName: String?
+var textEditValidationDocumentURL: URL?
+
+func openTextEditDocument(at documentURL: URL) throws {
+    guard let textEditURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") else {
+        throw ValidationError.missingApplication("com.apple.TextEdit")
+    }
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = true
+    let semaphore = DispatchSemaphore(value: 0)
+    var openError: Error?
+    NSWorkspace.shared.open([documentURL], withApplicationAt: textEditURL, configuration: configuration) { _, error in
+        openError = error
+        semaphore.signal()
+    }
+    _ = semaphore.wait(timeout: .now() + 20)
+    if let openError {
+        throw openError
+    }
+}
+
+func ensureTextEditReady(runtimeDir: String) throws {
+    if textEditValidationDocumentName == nil {
+        let documentURL = URL(fileURLWithPath: runtimeDir)
+            .appendingPathComponent("pushwrite-validation-main.txt", isDirectory: false)
+        try Data().write(to: documentURL, options: .atomic)
+        try openTextEditDocument(at: documentURL)
+        let name = documentURL.lastPathComponent
+        try waitUntil(timeoutSeconds: 20) {
+            try readAppleScriptBoolean("""
+            tell application "TextEdit"
+              return exists document "\(escapeAppleScriptString(name))"
+            end tell
+            """)
+        }
+        textEditValidationDocumentName = name
+        textEditValidationDocumentURL = documentURL
+    }
+    guard let documentName = textEditValidationDocumentName else {
+        throw ValidationError.controlFailed("TextEdit validation document is unavailable.")
+    }
     let script = """
+    set validationWindowName to "\(escapeAppleScriptString(documentName))"
     tell application "TextEdit"
-      activate
-      if not (exists document 1) then
-        make new document
+      if not (exists document "\(escapeAppleScriptString(documentName))") then
+        error "Missing dedicated PushWrite validation document"
       end if
-      set text of document 1 to ""
+      set validationDocument to document "\(escapeAppleScriptString(documentName))"
+      set text of validationDocument to ""
+      set index of (first window whose name is validationWindowName) to 1
+      activate
     end tell
     """
     _ = try runAppleScript(script)
@@ -631,15 +698,35 @@ func ensureTextEditReady() throws {
 }
 
 func readTextEditValue() throws -> String {
+    guard let documentName = textEditValidationDocumentName else {
+        throw ValidationError.controlFailed("TextEdit validation document is unavailable.")
+    }
     let script = """
     tell application "TextEdit"
-      if not (exists document 1) then
-        return ""
+      if not (exists document "\(escapeAppleScriptString(documentName))") then
+        error "Missing dedicated PushWrite validation document"
       end if
-      return text of document 1
+      return text of document "\(escapeAppleScriptString(documentName))"
     end tell
     """
     return try readAppleScriptString(script)
+}
+
+func closeTextEditValidationDocument() {
+    if let documentName = textEditValidationDocumentName {
+        _ = try? runAppleScript("""
+        tell application "TextEdit"
+          if exists document "\(escapeAppleScriptString(documentName))" then
+            close document "\(escapeAppleScriptString(documentName))" saving no
+          end if
+        end tell
+        """)
+    }
+    if let documentURL = textEditValidationDocumentURL {
+        try? FileManager.default.removeItem(at: documentURL)
+    }
+    textEditValidationDocumentName = nil
+    textEditValidationDocumentURL = nil
 }
 
 func openSafariFixture(fixtureURL: URL) throws {
@@ -943,7 +1030,7 @@ func runClipboardRestoreProbe(
     runtimeDir: String,
     seedClipboard: () throws -> Void
 ) throws -> ClipboardTestResult {
-    try ensureTextEditReady()
+    try ensureTextEditReady(runtimeDir: runtimeDir)
     try seedClipboard()
     let beforeSnapshot = snapshotGeneralPasteboard()
 
@@ -998,6 +1085,22 @@ func readTextEditDocument(named name: String) throws -> String {
     """)
 }
 
+func focusedTextEditElement() throws -> AXUIElement {
+    guard let textEdit = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.TextEdit").first else {
+        throw ValidationError.controlFailed("TextEdit is not running.")
+    }
+    let applicationElement = AXUIElementCreateApplication(textEdit.processIdentifier)
+    var focusedValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        applicationElement,
+        kAXFocusedUIElementAttribute as CFString,
+        &focusedValue
+    ) == .success, let focusedValue else {
+        throw ValidationError.controlFailed("Could not read TextEdit's focused element.")
+    }
+    return unsafeBitCast(focusedValue, to: AXUIElement.self)
+}
+
 func runSamePIDFocusSubstitutionProbe(
     payload: String,
     runtimeDir: String
@@ -1005,19 +1108,31 @@ func runSamePIDFocusSubstitutionProbe(
     let token = UUID().uuidString.lowercased()
     let firstName = "pushwrite-focus-a-\(token).txt"
     let secondName = "pushwrite-focus-b-\(token).txt"
-    let firstPath = "\(runtimeDir)/\(firstName)"
-    let secondPath = "\(runtimeDir)/\(secondName)"
+    let firstURL = URL(fileURLWithPath: runtimeDir).appendingPathComponent(firstName, isDirectory: false)
+    let secondURL = URL(fileURLWithPath: runtimeDir).appendingPathComponent(secondName, isDirectory: false)
     let firstSentinel = "FOCUS_A_\(token)"
     let secondSentinel = "FOCUS_B_\(token)"
     let fileManager = FileManager.default
 
-    try fileManager.createDirectory(
-        at: URL(fileURLWithPath: runtimeDir),
-        withIntermediateDirectories: true,
-        attributes: nil
-    )
-    try Data(firstSentinel.utf8).write(to: URL(fileURLWithPath: firstPath), options: .atomic)
-    try Data(secondSentinel.utf8).write(to: URL(fileURLWithPath: secondPath), options: .atomic)
+    try Data(firstSentinel.utf8).write(to: firstURL, options: .atomic)
+    try Data(secondSentinel.utf8).write(to: secondURL, options: .atomic)
+    try openTextEditDocument(at: firstURL)
+    try openTextEditDocument(at: secondURL)
+    try waitUntil(timeoutSeconds: 20) {
+        try readAppleScriptBoolean("""
+        tell application "TextEdit"
+          return (exists document "\(escapeAppleScriptString(firstName))") and (exists document "\(escapeAppleScriptString(secondName))")
+        end tell
+        """)
+    }
+
+    _ = try runAppleScript("""
+    set firstWindowName to "\(escapeAppleScriptString(firstName))"
+    tell application "TextEdit"
+      set index of (first window whose name is firstWindowName) to 1
+      activate
+    end tell
+    """)
 
     defer {
         _ = try? runAppleScript("""
@@ -1026,21 +1141,11 @@ func runSamePIDFocusSubstitutionProbe(
           if exists document "\(escapeAppleScriptString(secondName))" then close document "\(escapeAppleScriptString(secondName))" saving no
         end tell
         """)
-        try? fileManager.removeItem(atPath: firstPath)
-        try? fileManager.removeItem(atPath: secondPath)
+        try? fileManager.removeItem(at: firstURL)
+        try? fileManager.removeItem(at: secondURL)
     }
-
-    _ = try runAppleScript("""
-    tell application "TextEdit"
-      set firstDocument to open POSIX file "\(escapeAppleScriptString(firstPath))"
-      set secondDocument to open POSIX file "\(escapeAppleScriptString(secondPath))"
-      set text of firstDocument to "\(escapeAppleScriptString(firstSentinel))"
-      set text of secondDocument to "\(escapeAppleScriptString(secondSentinel))"
-      set index of window of firstDocument to 1
-      activate
-    end tell
-    """)
     Thread.sleep(forTimeInterval: 0.5)
+    let firstFocusedElement = try focusedTextEditElement()
 
     let requestID = UUID().uuidString
     let request = ValidationProductRequest(
@@ -1065,11 +1170,15 @@ func runSamePIDFocusSubstitutionProbe(
     Thread.sleep(forTimeInterval: 0.75)
 
     _ = try runAppleScript("""
+    set secondWindowName to "\(escapeAppleScriptString(secondName))"
     tell application "TextEdit"
-      set index of window of document "\(escapeAppleScriptString(secondName))" to 1
+      set secondDocument to document "\(escapeAppleScriptString(secondName))"
+      set index of (first window whose name is secondWindowName) to 1
       activate
     end tell
     """)
+    Thread.sleep(forTimeInterval: 0.25)
+    let secondFocusedElement = try focusedTextEditElement()
 
     try waitUntil(timeoutSeconds: 10) {
         fileManager.fileExists(atPath: responsePath)
@@ -1087,8 +1196,7 @@ func runSamePIDFocusSubstitutionProbe(
     let receiptPID = response.focusAtReceipt?.app?.pid
     let beforePID = response.focusBeforePaste?.app?.pid
     let sameProcessObserved = receiptPID != nil && receiptPID == beforePID
-    let differentElementsObserved = response.focusAtReceipt?.value == firstSentinel
-        && response.focusBeforePaste?.value == secondSentinel
+    let differentElementsObserved = !CFEqual(firstFocusedElement, secondFocusedElement)
     let firstDocumentUnchanged = firstValue == firstSentinel
     let secondDocumentUnchanged = secondValue == secondSentinel
 
@@ -1176,6 +1284,7 @@ do {
 }
 
 defer {
+    closeTextEditValidationDocument()
     stopProduct(repoRoot: repoRoot, productAppPath: productAppURL.path, runtimeDir: options.productRuntimeDir)
 }
 
@@ -1288,7 +1397,7 @@ do {
         productAppPath: productAppURL.path,
         runtimeDir: options.productRuntimeDir,
         prepare: {
-            try ensureTextEditReady()
+            try ensureTextEditReady(runtimeDir: options.productRuntimeDir)
         },
         readValue: {
             try readTextEditValue()

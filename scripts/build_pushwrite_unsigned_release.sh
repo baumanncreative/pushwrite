@@ -77,12 +77,14 @@ DMG_STAGING="$BUILD_ROOT/dmg-staging"
 cat > "$INSTALLATION_PATH" <<INSTALLATION
 PushWrite $VERSION wird direkt über GitHub und ohne Apple Developer ID oder Notarisierung verteilt.
 
-1. Öffne das DMG und ziehe PushWrite.app auf Applications.
-2. Starte PushWrite einmal.
-3. Die erste macOS-Warnung bietet nur "In den Papierkorb legen" und "Fertig" an. Wähle "Fertig".
-4. Öffne Systemeinstellungen > Datenschutz & Sicherheit.
-5. Scrolle zu Sicherheit und wähle bei PushWrite "Dennoch öffnen". Bestätige danach "Öffnen".
-6. Erlaube Mikrofon und Bedienungshilfen, sobald PushWrite danach fragt.
+1. Beende eine bereits laufende PushWrite-Version über "PushWrite beenden" und kontrolliere im Aktivitätsmonitor, dass kein PushWrite-Prozess mehr läuft.
+2. Verschiebe eine vorhandene /Applications/PushWrite.app in den Papierkorb. Lösche nicht den Ordner ~/Library/Application Support/PushWrite.
+3. Öffne das DMG und ziehe PushWrite.app auf Applications.
+4. Starte PushWrite einmal.
+5. Die erste macOS-Warnung bietet nur "In den Papierkorb legen" und "Fertig" an. Wähle "Fertig".
+6. Öffne Systemeinstellungen > Datenschutz & Sicherheit.
+7. Scrolle zu Sicherheit und wähle bei PushWrite "Dennoch öffnen". Bestätige danach "Öffnen".
+8. Erlaube Mikrofon und Bedienungshilfen, sobald PushWrite danach fragt.
 
 Ohne Apple Developer ID ist diese einmalige manuelle Freigabe technisch erforderlich.
 
